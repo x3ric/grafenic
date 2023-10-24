@@ -87,7 +87,7 @@ int main(void)
     Texture img1 = LoadTexture("./res/box1.png");
     Texture img2 = LoadTexture("./res/Arch.png");
 
-    //fpslimit = 60;
+    fpslimit = 60;
     
     while (!WindowState())
     {
@@ -102,7 +102,7 @@ int main(void)
                 //int camfar = 25;
                 //OrthoCam(-camsize, camsize, -camsize, camsize, -camfar, camfar);
                 //PerspectiveCam(45.0f, SCREEN_WIDTH / SCREEN_HEIGHT, 0.1f, 100.0f);
-                    DrawCube(img1);
+                    //DrawCube(img1);
             Draw(myFont);
             Fps(0, SCREEN_HEIGHT, myFont, 35);
             ExitPromt(myFont);
