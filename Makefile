@@ -1,10 +1,10 @@
 # Variables
-CC = gcc -g -O2
+CC = gcc #-g -O2 -Wextra
 CFLAGS = -Wall -I/usr/include/freetype2 -I/usr/include/GL
 LDFLAGS = -lglfw -lGL -lGLEW -lm -lX11 -lpthread -lXi -lXrandr -ldl -lfreetype
-TARGET = ./Build/Graphene
-SOURCES = ./Source/*.c
-HEADERS = ./Source/*/*.h
+TARGET = ./graphene
+SOURCES = ./src/*.c
+HEADERS = ./src/*/*.h
 
 # Default target
 all: $(TARGET)
