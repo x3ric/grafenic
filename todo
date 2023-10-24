@@ -1,0 +1,31 @@
+// maker draw circle
+
+// image color tinting
+
+// add rotation to Rect Image font etc also make image have var to height and weight , shader , 
+
+// primitive shapes triangle circle etc
+
+// window flags etc fullscreen etc
+
+// audio pitch and more
+
+// debug bool vars etc popup like imgui etc
+
+// lib to save vars in a temp file etc like unity PlayerPrefs
+
+// GetRandomValue(-8, 5)
+
+// input gamepad touch etc
+
+// collision 
+
+// camera blit effect "shader for the camera"
+
+// slerp and lerp
+
+// buttons and more inspired from imgui
+
+// texture loading
+
+// shaders frag
