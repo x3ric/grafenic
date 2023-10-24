@@ -82,16 +82,16 @@
             }
         }
 
-        void DrawRectBorder(int x, int y, int width, int height, int size, Color color) {
+        void DrawRectBorder(int x, int y, int width, int height, int thickness, Color color) {
             if (color.a == 0) color.a = 255;
             for (int i = x; i < x + width; i++) {
-                for (int t = 0; t < size; t++) {
+                for (int t = 0; t < thickness; t++) {
                     DrawPixel(i, y + t, color);
                     DrawPixel(i, y + height - 1 - t, color);
                 }
             }
-            for (int j = y + size; j < y + height - size; j++) {
-                for (int t = 0; t < size; t++) {
+            for (int j = y + thickness; j < y + height - thickness; j++) {
+                for (int t = 0; t < thickness; t++) {
                     DrawPixel(x + t, j, color);
                     DrawPixel(x + width - 1 - t, j, color);
                 }

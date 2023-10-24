@@ -21,6 +21,8 @@
     bool fullscreen = false;
     bool oldfullscreen = false;
 
+    bool floating = true;
+
     void window_size_callback(GLFWwindow* window, int width, int height)
     {
         const int MIN_WIDTH = 1;
@@ -41,9 +43,14 @@
             return -1;
         }
 
-        glfwWindowHint(GLFW_RESIZABLE , GLFW_FALSE); // Floating
         glfwWindowHint(GLFW_SAMPLES, 4); // 4x antialiasing
         glfwWindowHint(GLFW_DOUBLEBUFFER, GL_TRUE);
+        
+        if (floating) {
+            glfwWindowHint(GLFW_RESIZABLE , GLFW_FALSE);
+        } else {
+            glfwWindowHint(GLFW_RESIZABLE , GLFW_TRUE);
+        }
 
         window = glfwCreateWindow(SCREEN_WIDTH, SCREEN_HEIGHT, title, NULL, NULL);
         if (!window) {
