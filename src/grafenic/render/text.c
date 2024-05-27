@@ -26,15 +26,15 @@ Font GenAtlas(Font font) {
     if (font.fontSize <= 1) font.fontSize = 24.0;
     if (!font.fontBuffer) return font;
     if (!font.nearest) font.nearest = false;
-    font.atlasWidth = 1024;
-    font.atlasHeight = 1024;
+    font.atlasWidth = 512;
+    font.atlasHeight = 512;
     font.atlasData = (unsigned char*)calloc(font.atlasWidth * font.atlasHeight, sizeof(unsigned char));
     if (!font.atlasData) {
         free(font.fontBuffer);
         return font;
     }
     stbtt_pack_context packContext;
-    if (!stbtt_PackBegin(&packContext, font.atlasData, font.atlasWidth, font.atlasHeight, 0, 1, NULL)) {
+    if (!stbtt_PackBegin(&packContext, font.atlasData, font.atlasWidth, font.atlasHeight, 0, 5, NULL)) {
         free(font.atlasData);
         free(font.fontBuffer);
         return font;
@@ -149,19 +149,16 @@ void DrawText(int x, int y, Font font, float fontSize, const char* text, Color c
     stbtt_GetFontVMetrics(&font.fontInfo, &ascent, &descent, &lineGap);
     int baseTextHeight = (int)((ascent - descent) * scale);
     int baseTextWidth = 0;
-    int totalWidth = 0;
-    int maxY = y;
     for (size_t i = 0; text[i] != '\0'; ++i) {
         if (text[i] == '\n') {
-            maxY += baseTextHeight;
-            totalWidth = 0;
+            baseTextWidth = 0;
             continue;
         }
         int glyphIndex = text[i] - 32;
         float xAdvance = font.glyphs[glyphIndex].xadvance;
-        totalWidth += (int)xAdvance;
-        baseTextWidth = fmaxf(baseTextWidth, totalWidth);
+        baseTextWidth += (int)xAdvance;
     }
+    static GLuint textTexture = 0;
     if (textTexture == 0) {
         glGenTextures(1, &textTexture);
     }
@@ -172,6 +169,7 @@ void DrawText(int x, int y, Font font, float fontSize, const char* text, Color c
     }
     int offsetX = 0;
     int offsetY = 0;
+    int offset = 0;
     for (size_t i = 0; text[i] != '\0'; ++i) {
         if (text[i] == '\n') {
             offsetY += baseTextHeight;
@@ -185,10 +183,11 @@ void DrawText(int x, int y, Font font, float fontSize, const char* text, Color c
         int xoffset = (int)font.glyphs[glyphIndex].xoff;
         int yoffset = (int)font.glyphs[glyphIndex].yoff;
         unsigned char* char_bitmap = stbtt_GetCodepointBitmap(&font.fontInfo, 0, scale, text[i], &charWidth, &charHeight, &xoffset, &yoffset);
+        if (i == 0) {offset = 1+(charHeight/2) ;}
         for (int j = 0; j < charHeight; ++j) {
             for (int k = 0; k < charWidth; ++k) {
                 int bitmap_x = offsetX + k + xoffset;
-                int bitmap_y = offsetY - j - yoffset;
+                int bitmap_y = offset + offsetY - j - yoffset;
                 if (bitmap_x < 0 || bitmap_x >= baseTextWidth || bitmap_y < 0 || bitmap_y >= baseTextHeight) continue;
                 int pixel = (bitmap_y * baseTextWidth + bitmap_x) * 4;
                 unsigned char alpha = char_bitmap[j * charWidth + k];
@@ -206,11 +205,9 @@ void DrawText(int x, int y, Font font, float fontSize, const char* text, Color c
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     if (font.nearest) {
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        glTexOpt(GL_NEAREST,GL_CLAMP_TO_EDGE);
     } else {
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexOpt(GL_LINEAR,GL_CLAMP_TO_EDGE);
     }
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
@@ -218,8 +215,14 @@ void DrawText(int x, int y, Font font, float fontSize, const char* text, Color c
     float quadScaleFactor = fontSize / baseFontSize;
     int scaledTextHeight = (int)(baseTextHeight * quadScaleFactor);
     int scaledTextWidth = (int)(baseTextWidth * quadScaleFactor);
-    Quad(x + (int)(1*quadScaleFactor) ,y - (int)(((baseTextHeight/2)-3)*quadScaleFactor), scaledTextWidth, scaledTextHeight, 0.0f, fontshaderdefault);
-    glBindTexture(GL_TEXTURE_2D, 0);
+    Rect((RectObject){
+        { x, y + scaledTextHeight, 0.0f },                   // Bottom Left
+        { x + scaledTextWidth, y + scaledTextHeight, 0.0f }, // Bottom Right
+        { x, y, 0.0f },                                      // Top Left
+        { x + scaledTextWidth, y, 0.0f },                    // Top Right
+        shaderdefault,                                       // Shader
+        camera,                                              // Camera
+    });
     glDisable(GL_BLEND);
+    glBindTexture(GL_TEXTURE_2D, 0);
 }
-

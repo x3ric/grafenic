@@ -30,7 +30,14 @@ Image LoadImage(const char *filename) {
 void DrawImage(Image image, float x, float y, float width, float height, GLfloat angle) {
     glEnable(GL_BLEND);glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     glBindTexture(GL_TEXTURE_2D, image.raw);
-    Quad(x, y, width, height, angle, pixelshaderdefault);
+    Rect((RectObject){
+        { x, y + height, 0.0f },         // Bottom Left
+        { x + width, y + height, 0.0f }, // Bottom Right
+        { x, y, 0.0f },                  // Top Left
+        { x + width, y, 0.0f },          // Top Right
+        shaderdefault,                   // Shader
+        camera,                          // Camera
+    });
     glBindTexture(GL_TEXTURE_2D, 0);
     glDisable(GL_BLEND);
 }
@@ -38,18 +45,31 @@ void DrawImage(Image image, float x, float y, float width, float height, GLfloat
 void DrawImageShader(Image image, float x, float y, float width, float height, GLfloat angle, Shader shader) {
     glEnable(GL_BLEND);glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     glBindTexture(GL_TEXTURE_2D, image.raw);
-    Quad(x, y, width, height, angle, shader);
+    Rect((RectObject){
+        { x, y + height, 0.0f },         // Bottom Left
+        { x + width, y + height, 0.0f }, // Bottom Right
+        { x, y, 0.0f },                  // Top Left
+        { x + width, y, 0.0f },          // Top Right
+        shaderdefault,                   // Shader
+        camera,                          // Camera
+    });
     glBindTexture(GL_TEXTURE_2D, 0);
     glDisable(GL_BLEND);
+}
+
+void BindImg(Image image){
+    glEnable(GL_BLEND);glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glBindTexture(GL_TEXTURE_2D, image.raw);
 }
 
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include <stb_image_write.h>
 
 void SaveScreenshot(const char *filename, int x, int y, int width, int height) {
+    printf("Saving screenshot to -> %s\n", filename);
     unsigned char *pixels = malloc(width * height * 4); // RGBA
     if (!pixels) return;
-    int adjustedY = SCREEN_HEIGHT - y - height;
+    int adjustedY = window.screen_height - y - height;
     glReadPixels(x, adjustedY, width, height, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
     unsigned char *flippedPixels = malloc(width * height * 4);
     if (!flippedPixels) {

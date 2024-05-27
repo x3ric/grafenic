@@ -1,0 +1,43 @@
+#!/bin/bash
+CC="gcc"
+CFLAGS="-I./deps -I./src"
+LDFLAGS="-lglfw -lGL -lpthread -lGLEW -lm -ldl"
+TARGET="./grafenic"
+if [ -z "$2" ]; then
+	SOURCES="./src/main.c"
+else
+	SOURCES="./src/$2.c"
+fi
+clean() {
+    echo -e "rm -f $TARGET"
+    rm -f "$TARGET"
+}
+build() {
+    clean
+    echo -e "$CC $CFLAGS $SOURCES -o $TARGET $LDFLAGS"
+    $CC $CFLAGS $SOURCES -o $TARGET $LDFLAGS
+}
+run() {
+    build "$SOURCES"
+    $TARGET
+}
+debug() {
+    CC="gcc -g"
+    build "$SOURCES"
+    gdb -q $TARGET --eval-command=run
+}
+case $1 in
+    run)
+        run
+        ;;
+    debug)
+        debug
+        ;;
+    clean)
+        clean
+        ;;
+    *)
+        echo "Usage: $0 {run|debug|clean} [source_file_name]"
+        exit 1
+        ;;
+esac

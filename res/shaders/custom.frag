@@ -74,7 +74,7 @@ vec4 glow(in sampler2D textureSampler, in vec2 texCoord, float intensity) {
 
 void mainImage(in vec2 texCoord, in vec2 fragCoord, out vec4 fragColor) {
     fragColor = texture(screenTexture, texCoord)
-    //+ (aberration(screenTexture,texCoord,sin(iTime/2)*2.0) - texture(screenTexture, texCoord))
+    + (aberration(screenTexture,texCoord,sin(iTime/2)*2.0) - texture(screenTexture, texCoord))
     //+ (blur(screenTexture,texCoord,sin(iTime)*1.0) - texture(screenTexture, texCoord)) 
     //+ (glow(screenTexture,texCoord,sin(iTime/2)*2.0) - texture(screenTexture, texCoord))
     //+ (waves(rainbow(iTime),fragCoord))

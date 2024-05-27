@@ -153,7 +153,6 @@ int KeyChar(const char* character) {
         return false;
     }
 
-    
     static int lastState[GLFW_KEY_LAST + 1] = {0};
     static int toggleState[GLFW_KEY_LAST + 1] = {0};
 
@@ -177,13 +176,13 @@ int KeyChar(const char* character) {
     }
 
     char lastPressedChar = '\0';
-    void CharCallback(GLFWwindow* window, unsigned int codepoint) {
+    void CharCallback(GLFWwindow* glfw_window, unsigned int codepoint) {
         if (codepoint < 128) {
             lastPressedChar = (char)codepoint;
         }
     }
     
-    void KeyCallback(GLFWwindow* window, int key, int scancode, int action, int mods) {
+    void KeyCallback(GLFWwindow* glfw_window, int key, int scancode, int action, int mods) {
         const char* actionStrings[] = {"RELEASED", "PRESSED", "REPEATED", "RELASED"};
         const char* actionString = action >= GLFW_PRESS && action <= GLFW_REPEAT ? actionStrings[action] : actionStrings[3];
         char modString[64] = {0};
@@ -207,12 +206,45 @@ int KeyChar(const char* character) {
                 }
             }
         }
-        if(debug.input){
+        if(window.debug.input){
             printf("%s[%s] %s %d %d %c\n", modString, keyNameBuffer,actionString, scancode, key,lastPressedChar);
         }
     }
 
-// GAMEPAD
+// GAMEPAD & JOYSTICK
+
+    #define MAX_JOYSTICKS (GLFW_JOYSTICK_LAST + 1)
+    static int joysticks[MAX_JOYSTICKS] = {0};
+    static int joystick_count = 0;
+
+    static void joystick_callback(int jid, int event) {
+        if (event == GLFW_CONNECTED) {
+            if (joystick_count < MAX_JOYSTICKS) {
+                joysticks[joystick_count++] = jid;
+            }
+        } else if (event == GLFW_DISCONNECTED) {
+            for (int i = 0; i < joystick_count; i++) {
+                if (joysticks[i] == jid) {
+                    joysticks[i] = joysticks[--joystick_count];
+                    break;
+                }
+            }
+        }
+    }
+
+    static const char* GetJoystickName(int jid) {
+        const char* name = glfwGetJoystickName(jid);
+        return name ? name : "Unknown";
+    }
+
+    void LoadJoysticks(void) {
+        for (int jid = GLFW_JOYSTICK_1; jid <= GLFW_JOYSTICK_LAST; jid++) {
+            if (glfwJoystickPresent(jid)) {
+                joysticks[joystick_count++] = jid;
+            }
+        }
+        glfwSetJoystickCallback(joystick_callback);
+    }
 
     int GamepadButton(const char* character) {
         if (!character) return -1;
@@ -227,6 +259,8 @@ int KeyChar(const char* character) {
         if (strcmp(character, "Guide") == 0) return GLFW_GAMEPAD_BUTTON_GUIDE;
         if (strcmp(character, "LeftThumb") == 0) return GLFW_GAMEPAD_BUTTON_LEFT_THUMB;
         if (strcmp(character, "RightThumb") == 0) return GLFW_GAMEPAD_BUTTON_RIGHT_THUMB;
+        if (strcmp(character, "L3") == 0) return GLFW_GAMEPAD_BUTTON_LEFT_THUMB; // Alternative label for LeftThumb
+        if (strcmp(character, "R3") == 0) return GLFW_GAMEPAD_BUTTON_RIGHT_THUMB; // Alternative label for RightThumb
         if (strcmp(character, "DpadUp") == 0) return GLFW_GAMEPAD_BUTTON_DPAD_UP;
         if (strcmp(character, "DpadRight") == 0) return GLFW_GAMEPAD_BUTTON_DPAD_RIGHT;
         if (strcmp(character, "DpadDown") == 0) return GLFW_GAMEPAD_BUTTON_DPAD_DOWN;
@@ -300,22 +334,42 @@ int KeyChar(const char* character) {
 // MOUSE
 
     typedef struct {
-        double x, y;
+        double      x, y;
+        double      lastx, lasty;
+        bool        scolling;
+    } MouseScroll;
+
+    typedef struct {
+        double      x, y;
+        double      lastx, lasty;
+        MouseScroll scroll;
+        bool        moving;
     } Mouse;
 
-    Mouse lastmouse = {0, 0};
-    Mouse mouse = {0, 0};
-    bool mousemoving = false;
+    Mouse mouse;
 
     Mouse MouseInit() {
         glfwGetCursorPos(window.w, &mouse.x, &mouse.y);
-        if (mouse.x != lastmouse.x || mouse.y != lastmouse.y) {
-            lastmouse = mouse;
-            mousemoving = true;
-            return (Mouse){mouse.x, mouse.y};
+        if (mouse.scroll.x != mouse.scroll.lastx || mouse.scroll.y != mouse.scroll.lasty) {
+            mouse.scroll.scolling = true;
+        } else {
+            mouse.scroll.scolling = false;
         }
-        mousemoving = false;
-        return (Mouse){mouse.x, mouse.y};
+        mouse.scroll.lastx = mouse.scroll.x;
+        mouse.scroll.lasty = mouse.scroll.y;
+        if (mouse.x != mouse.lastx || mouse.y != mouse.lasty) {
+            return (Mouse){mouse.x, mouse.y, mouse.x, mouse.y, mouse.scroll, true};
+        }
+        return (Mouse){mouse.x, mouse.y, mouse.lastx, mouse.lasty, mouse.scroll, false};
+    }
+
+    void ScrollCallback(GLFWwindow* window, double xoffset, double yoffset) {
+        mouse.scroll.x += xoffset;
+        mouse.scroll.y += yoffset;
+    }
+
+    void SetCursorPos(float x, float y) {
+        glfwSetCursorPos(window.w,x,y);
     }
 
     static int mouseLastState[GLFW_MOUSE_BUTTON_LAST + 1] = {0};
@@ -342,19 +396,4 @@ int KeyChar(const char* character) {
         if (button <= GLFW_MOUSE_BUTTON_LAST) {
             mouseToggleState[button] = 0;
         }
-    }
-
-    typedef struct {
-        double x, y;
-    } MouseScroll;
-
-    static MouseScroll mousescroll = {0.0, 0.0};
-
-    void ScrollCallback(GLFWwindow* window, double xoffset, double yoffset) {
-        mousescroll.x += xoffset;
-        mousescroll.y += yoffset;
-    }
-
-    void SetCursorPos(float x, float y) {
-        glfwSetCursorPos(window.w,x,y);
     }

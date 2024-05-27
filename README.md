@@ -1,43 +1,63 @@
 <div align="center">
 
+### Compile & run
+
+<pre>
+git clone https://github.com/x3ric/grafenic
+cd grafenic
+./build run
+</pre>
+
+### Examples
+
+**main** -> ./src/main.c (default when ./build run)
+
+**gamepad** -> ./src/gamepad.c (when ./build run gamepad)
+
+**shader** -> ./src/shader.c (when ./build run shader)
+
+**cursor** -> ./src/cursor.c (when ./build run cursor)
+
+**pong** -> ./src/pong.c (when ./build run pong)
+
+**3d** -> ./src/3d.c (when ./build run 3d)
+
 <details>
 <summary><h3>Variables</h3></summary>
 
-**WIDTH:** Initial width of the window (output)
+**window.width:** Initial width of the window (output)
 
-**HEIGHT:** Initial height of the window (output)
+**window.height:** Initial height of the window (output)
 
-**SCREEN_WIDTH:** Current width of the screen (output)
+**window.screen_width:** Current width of the screen (output)
 
-**SCREEN_HEIGHT:** Current height of the screen (output)
+**window.screen_height:** Current height of the screen (output)
 
-**TITLE:** Window title (input/output)
+**window.title:** Window title (input/output)
 
-**SINK_TITLE:** Audio interface title (input/output)
+**window.samples:** Aliasing (input/output)
 
-**SAMPLES:** Aliasing (input/output)
+**window.refresh_rate:** Refresh rate (input/output)
 
-**REFRESH_RATE:** Refresh rate (input/output)
+**window.floating:** Window is floating (false by !default)
 
-**floating:** Window is floating (false by !default)
+**window.fullscreen:** Window is fullscreen (true by !default)
 
-**fullscreen:** Window is fullscreen (true by !default)
+**window.vsync:** Vertical sync enabled (true by !default)
 
-**vsync:** Vertical sync enabled (true by !default)
+**window.hidecursor:** Cursor visibility (true by !default)
 
-**cursor:** Cursor visibility (false by !default)
+**window.transparent:** Transparency enabled (true by !default)
 
-**transparent:** Transparency enabled (true by !default)
+**window.decorated:** Window decoration (false by !default)
 
-**decorated:** Window decoration (false by !default)
+**window.hided:** Window visibility (true by !default)
 
-**visible:** Window visibility (false by !default)
+**window.fpslimit:** FPS limit (60 by !default)
 
-**fpslimit:** FPS limit (60 by !default)
+**window.fps:** Frames per second (output)
 
-**fps:** Frames per second (output)
-
-**deltatime:** Delta time (output)
+**window.deltatime:** Delta time (output)
 
 **mouse:** Mouse position (x, y) (output)
 
@@ -45,19 +65,11 @@
 
 **mousemoving:** Mouse movement (output)
 
-**camera.x:** Camera X position
+**window.debug.input:** Debug input (true by !default)
 
-**camera.y:** Camera Y position
+**window.debug.wireframe:** Debug wireframe (true by !default)
 
-**camera.z:** Camera Z position
-
-**camera.angle:** Camera angle
-
-**debug.input:** Debug input (true by !default)
-
-**debug.wireframe:** Debug wireframe (true by !default)
-
-**debug.fps:** Debug FPS (true by !default)
+**window.debug.fps:** Debug FPS (true by !default)
 
 </details>
 
@@ -90,6 +102,22 @@
 <tr><td><img src="https://via.placeholder.com/50x30/FF00FF"></td><td>MAGENTA (Color){ 255, 0, 255}</td></tr>
 <tr><td></td><td>BLANK (Color){ 0, 0, 0, 0}</td></tr>
 </table>
+</details>
+
+<details>
+<summary><h3>Todo</h3></summary>
+
+
+**Collision Detection**: Implement collision detection for 3D objects.
+
+**3D Model Importer**: Develop functionality to import various 3D model formats.
+
+**Cubemap**: Add support for cubemap textures for environment mapping.
+
+**Lights & Shadows**: Implement dynamic lighting and shadow effects.
+
+**Camera Rotation on 3D Objects**: Enable camera rotation functionality for 3D objects, such as cubes.
+
 </details>
 
 </p><a href="https://archlinux.org"><img alt="Arch Linux" src="https://img.shields.io/badge/Arch_Linux-1793D1?style=for-the-badge&logo=arch-linux&logoColor=D9E0EE&color=000000&labelColor=97A4E2"/></a><br>

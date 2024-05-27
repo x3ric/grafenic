@@ -5,9 +5,17 @@
 #include <unistd.h>
 #include <limits.h>
 
+// Defines
+
 #ifndef PI
     #define PI 3.14159265358979323846f
 #endif
+
+// Structs
+
+typedef struct {
+    float x,y,z;
+} Vec3;
 
 // Debug
 
@@ -215,6 +223,18 @@
         return text;
     }
 
+// Basic
+
+    int Clamp(int value, int min, int max) {
+        if (value < min) {
+            return min;
+        } else if (value > max) {
+            return max;
+        } else {
+            return value;
+        }
+    }
+
 // Smothing
 
     float Easing(float t, const char *text) {
@@ -279,11 +299,18 @@
         return false;
     }
 
+// Collision Checking
+
+bool IsInside(float x, float y, float rectX, float rectY, float rectWidth, float rectHeight) {
+    return x >= rectX && x <= rectX + rectWidth &&
+           y >= rectY && y <= rectY + rectHeight;
+}
+
 // Ratio resize
 
     int Scaling(int fontsize) {
-        float widthScale = (float)SCREEN_WIDTH / WIDTH;
-        float heightScale = (float)SCREEN_HEIGHT / HEIGHT;
+        float widthScale = (float)window.screen_width / window.width;
+        float heightScale = (float)window.screen_height / window.height;
         float scale = fmin(widthScale, heightScale);
         int scaledFontSize = (int)(fontsize * scale);
         return (fontsize > 0) ? fmax(scaledFontSize, 1) : 0;
@@ -377,13 +404,3 @@
             printf("File successfully deleted\n");
         }
     }
-
-// OpenGL utils
-
-    void glTexOpt(GLint filter,GLint warp){
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, filter);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, filter);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, warp);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, warp);
-        glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
-    } 

@@ -44,6 +44,11 @@ Color HexToColor(const char* hex) {
     return color;
 }
 
+void glColor(Color color){
+    if (color.a == 0) { color.a = 255; }
+    glColor4f((GLclampf)color.r/255.0f, (GLclampf)color.g/255.0f, (GLclampf)color.b/255.0f, (GLclampf)color.a/255.0f);
+}
+
 void ClearColor(Color color) {
     if (color.a == 0) { color.a = 255; }
     glClearColor((GLclampf)color.r/255.0f, (GLclampf)color.g/255.0f, (GLclampf)color.b/255.0f, (GLclampf)color.a/255.0f);
