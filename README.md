@@ -14,8 +14,11 @@ cd grafenic
 
 **gamepad** -> ./src/gamepad.c (when ./build run gamepad)
 
-**pong** -> ./src/pong.c (when ./build run pong)
+**shader** -> ./src/shader.c (when ./build run shader)
 
+**cursor** -> ./src/cursor.c (when ./build run cursor)
+
+**pong** -> ./src/pong.c (when ./build run pong)
 
 <details>
 <summary><h3>Variables</h3></summary>

@@ -39,7 +39,7 @@ void DrawGamepadInfo(int x, int *y, int jid) {
             *y += Scaling(20);
         }
     // Extra spacing between gamepads
-        *y += Scaling(30);
+        *y += Scaling(30); 
 }
 
 void update(void) {
