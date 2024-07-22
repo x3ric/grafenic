@@ -8,6 +8,15 @@ cd grafenic
 ./build run
 </pre>
 
+### Examples
+
+**main** -> ./src/main.c (default when ./build run)
+
+**gamepad** -> ./src/gamepad.c (when ./build run gamepad)
+
+**pong** -> ./src/pong.c (when ./build run pong)
+
+
 <details>
 <summary><h3>Variables</h3></summary>
 

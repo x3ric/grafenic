@@ -212,7 +212,41 @@ int KeyChar(const char* character) {
         }
     }
 
-// GAMEPAD
+// GAMEPAD & JOYSTICK
+
+    int gamepadId;
+    #define MAX_JOYSTICKS (GLFW_JOYSTICK_LAST + 1)
+    static int joysticks[MAX_JOYSTICKS] = {0};
+    static int joystick_count = 0;
+
+    static void joystick_callback(int jid, int event) {
+        if (event == GLFW_CONNECTED) {
+            if (joystick_count < MAX_JOYSTICKS) {
+                joysticks[joystick_count++] = jid;
+            }
+        } else if (event == GLFW_DISCONNECTED) {
+            for (int i = 0; i < joystick_count; i++) {
+                if (joysticks[i] == jid) {
+                    joysticks[i] = joysticks[--joystick_count];
+                    break;
+                }
+            }
+        }
+    }
+
+    static const char* GetJoystickName(int jid) {
+        const char* name = glfwGetJoystickName(jid);
+        return name ? name : "Unknown";
+    }
+
+    void LoadJoysticks(void) {
+        for (int jid = GLFW_JOYSTICK_1; jid <= GLFW_JOYSTICK_LAST; jid++) {
+            if (glfwJoystickPresent(jid)) {
+                joysticks[joystick_count++] = jid;
+            }
+        }
+        glfwSetJoystickCallback(joystick_callback);
+    }
 
     int GamepadButton(const char* character) {
         if (!character) return -1;

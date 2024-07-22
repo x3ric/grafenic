@@ -1,7 +1,7 @@
 #!/bin/bash
 CC="gcc"
 CFLAGS="-I./deps -I./src"
-LDFLAGS="-lglfw -lGL -lpthread -lGLEW -lm -ldl"
+LDFLAGS="-lglfw -lGL -lpthread -lGLEW -lm -ldl -Wall"
 TARGET="./grafenic"
 if [ -z "$2" ]; then
 	SOURCES="./src/main.c"

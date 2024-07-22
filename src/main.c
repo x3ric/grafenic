@@ -7,7 +7,6 @@ Shader custom;
 float mousecursorx;
 float mousecursory;
 float timer;
-
 Color pixelColor;
 
 #include "ui.c"
