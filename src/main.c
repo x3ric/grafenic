@@ -1,8 +1,7 @@
 #include "grafenic/init.c"
+#include "grafenic/ui.c"
 
 Font font;
-
-#include "grafenic/ui.c"
 
 void update(void){
     // Input Example
@@ -37,28 +36,6 @@ void update(void){
         //        size -= 1;
         //    }
         //DrawTriangle(x - size, y, x + size, y, x, y + size, PURPLE);
-    // Experimental WorkInProgress
-        //debug.wireframe = true; //debug single part
-        // TriangleGL 
-            //GLfloat x1 = SCREEN_WIDTH/2, y1 = 0;
-            //GLfloat x2 = 0.0f, y2 = SCREEN_HEIGHT;
-            //GLfloat x3 = SCREEN_WIDTH,  y3 = SCREEN_HEIGHT;
-            //Triangle(x1,y1,x2,y2,x3,y3,0,custom);
-            //Zelda(x1,y1,x2,y2,x3,y3,0,custom);
-        //debug.wireframe = false; //stop debugging
-    // Bottom Bar Info
-        //if(isKey("Space")){
-        //    int y = SCREEN_HEIGHT / 12;
-        //    DrawRect(0, 0, SCREEN_WIDTH, y, (Color){50, 50, 50,100});
-        //    DrawRectBorder(0, 0, SCREEN_WIDTH, y, Scaling(5), (Color){0, 0, 0,175});
-        //    int texts = 3;
-        //    // Mouse info
-        //        DrawTextRows( font,0,texts, text("Mouse = X: %.0f Y: %.0f", mouse.x, mouse.y));
-        //    // Scroll info
-        //        DrawTextRows( font,1,texts, text("Scroll = X: %.0f Y: %.0f", mousescroll.x, mousescroll.y));
-        //    // Window info 
-        //        DrawTextRows( font,2,texts, text("Size = X: %d Y: %d", SCREEN_WIDTH, SCREEN_HEIGHT));
-        //}
     // Modular ui.c functions
         // Left Text Bar
             //int texts = 9;
@@ -89,7 +66,9 @@ int main(int arglenght, char** args)
       // camera.x = float;
       // camera.y = float;
       // camera.z = float;
-      // camera.angle = angle in degres;
+      // camera.rx = rotation x;
+      // camera.ry = rotation y;
+      // camera.rz = rotation z;
       // debug.input = true;
       // debug.wireframe = true;
       // debug.fps = true;

@@ -215,7 +215,7 @@ void DrawText(int x, int y, Font font, float fontSize, const char* text, Color c
     float quadScaleFactor = fontSize / baseFontSize;
     int scaledTextHeight = (int)(baseTextHeight * quadScaleFactor);
     int scaledTextWidth = (int)(baseTextWidth * quadScaleFactor);
-    Rect(x, y, scaledTextWidth, scaledTextHeight, 0.0f, fontshaderdefault);
+    Rect(x, y, scaledTextWidth, scaledTextHeight, 0.0f, shaderdefault);
     glDisable(GL_BLEND);
     glBindTexture(GL_TEXTURE_2D, 0);
 }

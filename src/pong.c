@@ -6,6 +6,7 @@
 #define BALL_SIZE 20
 #define BALL_SPEED 12
 #define LERP 0.75
+#define LERP_ENEMY 0.15
 
 typedef struct {
     float x, y, width, height, speed;
@@ -26,23 +27,15 @@ void resetBall() {
     ball.speedY = BALL_SPEED * ((rand() % 2 == 0) ? 1 : -1);
 }
 
-void AIPaddle(const float lerp, Paddle *paddle) {
-    if (ball.y + ball.size / 2 < paddle->y + paddle->height / 2) {
-        paddle->y = Lerp(paddle->y, (paddle->y - paddle->speed), lerp);
-    } else if (ball.y + ball.size / 2 > paddle->y + paddle->height / 2) {
-        paddle->y = Lerp(paddle->y, (paddle->y + paddle->speed), lerp);
-    }
-}
-
 void update(void) {
     // Force Screen at 1920x1080
         SCREEN_WIDTH = 1920;
         SCREEN_HEIGHT = 1080;
     // Enemy Ai
-        AIPaddle(LERP, &rightPaddle);
+        rightPaddle.y = Lerp(rightPaddle.y, SCREEN_HEIGHT - ball.y - (rightPaddle.height/2), LERP_ENEMY);
     // Move paddles based on user input
-        if (isKeyDown("w")) leftPaddle.y = Lerp(leftPaddle.y, (leftPaddle.y + leftPaddle.speed), LERP);
-        if (isKeyDown("s")) leftPaddle.y = Lerp(leftPaddle.y, (leftPaddle.y - leftPaddle.speed), LERP);
+        if (isKeyDown("w")) leftPaddle.y = Lerp(leftPaddle.y, (leftPaddle.y - leftPaddle.speed), LERP);
+        if (isKeyDown("s")) leftPaddle.y = Lerp(leftPaddle.y, (leftPaddle.y + leftPaddle.speed), LERP);
     // Ensure paddles stay within screen bounds
         leftPaddle.y = fminf(fmaxf(leftPaddle.y, 0), SCREEN_HEIGHT - leftPaddle.height);
         rightPaddle.y = fminf(fmaxf(rightPaddle.y, 0), SCREEN_HEIGHT - rightPaddle.height);
@@ -51,11 +44,14 @@ void update(void) {
         ball.y = Lerp(ball.y, (ball.y + ball.speedY), LERP);
     // Check collision with top and bottom walls
         if (ball.y <= 0 || ball.y >= SCREEN_HEIGHT - ball.size) ball.speedY = -ball.speedY;
-    // Check collision with paddles
-        if ((ball.x <= leftPaddle.x + leftPaddle.width) && (ball.y + ball.size >= leftPaddle.y) && (ball.y <= leftPaddle.y + leftPaddle.height)) {
+    // Check collision with the left paddle
+        if ((ball.x - (ball.size / 2) <= leftPaddle.x + (Scaling(leftPaddle.width) / 2)) && 
+            IsInside((ball.x + (ball.size / 2)),(SCREEN_HEIGHT - ball.y - (ball.size / 2)),leftPaddle.x, leftPaddle.y, Scaling(leftPaddle.width), Scaling(leftPaddle.height))) {
             ball.speedX = -ball.speedX;
         }
-        if ((ball.x + ball.size >= rightPaddle.x) && (ball.y + ball.size >= rightPaddle.y) && (ball.y <= rightPaddle.y + rightPaddle.height)) {
+    // Check collision with the right paddle
+        if ((ball.x + (ball.size / 2) >= rightPaddle.x - (Scaling(rightPaddle.width) / 2)) && 
+            IsInside((ball.x + (ball.size / 2)),(SCREEN_HEIGHT - ball.y - (ball.size / 2)),rightPaddle.x, rightPaddle.y, Scaling(rightPaddle.width), Scaling(rightPaddle.height))) {
             ball.speedX = -ball.speedX;
         }
     // Check if the ball is out of bounds

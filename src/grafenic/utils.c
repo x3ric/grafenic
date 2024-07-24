@@ -5,9 +5,17 @@
 #include <unistd.h>
 #include <limits.h>
 
+// Defines
+
 #ifndef PI
     #define PI 3.14159265358979323846f
 #endif
+
+// Structs
+
+typedef struct {
+    float x,y,z;
+} Vec3;
 
 // Debug
 
@@ -215,7 +223,7 @@
         return text;
     }
 
-// Utils
+// Basic
 
     int Clamp(int value, int min, int max) {
         if (value < min) {
@@ -290,6 +298,13 @@
         }
         return false;
     }
+
+// Collision Checking
+
+bool IsInside(float x, float y, float rectX, float rectY, float rectWidth, float rectHeight) {
+    return x >= rectX && x <= rectX + rectWidth &&
+           y >= rectY && y <= rectY + rectHeight;
+}
 
 // Ratio resize
 
@@ -389,13 +404,3 @@
             printf("File successfully deleted\n");
         }
     }
-
-// OpenGL utils
-
-    void glTexOpt(GLint filter,GLint warp){
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, filter);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, filter);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, warp);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, warp);
-        glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
-    } 

@@ -1,11 +1,10 @@
 #include "grafenic/init.c"
+#include "grafenic/ui.c"
 
 Font font;
 Image img;
 Shader custom;
 Color pixelColor;
-
-#include "grafenic/ui.c"
 
 void update(void){
     // Movement Camera
@@ -19,39 +18,48 @@ void update(void){
             speed = 0.05f;
         }
         if (isKeyDown("w")) {
-            camera.y += (speed / 10) * clampz;
+            camera.position.y += (speed / 10) * clampz;
         }
         if (isKeyDown("s")) {
-            camera.y -= (speed / 10) * clampz;
+            camera.position.y -= (speed / 10) * clampz;
         }
         if (isKeyDown("a")) {
-            camera.x += (speed / 10) * clampz;
+            camera.position.x += (speed / 10) * clampz;
         }
         if (isKeyDown("d")) {
-            camera.x -= (speed / 10) * clampz;
+            camera.position.x -= (speed / 10) * clampz;
         }
         if (isKeyDown("r")) {
             speed = 0.0f;
-            camera.x = Lerp(camera.x, 0.0f, 0.0003f * clampz);
-            camera.y = Lerp(camera.y, 0.0f, 0.0003f * clampz);
-            camera.z = Lerp(camera.z, 1.0f, 0.0003f * clampz);
-            camera.angle = Lerp(camera.angle, (GLfloat)0.0f, 0.0003f * clampz);
+            camera.position.x = Lerp(camera.position.x, 0.0f, 0.0003f * clampz);
+            camera.position.y = Lerp(camera.position.y, 0.0f, 0.0003f * clampz);
+            camera.position.z = Lerp(camera.position.z, 1.0f, 0.0003f * clampz);
+            camera.rotation.z = Lerp(camera.rotation.z, (GLfloat)0.0f, 0.0003f * clampz);
             mousescroll.y = 0.0f;
         } else {
-            if (camera.z <= 0) {
-                camera.z = Lerp(1.0, mousescroll.y * 0.1f, 0.0003f * clampz);
+            if (camera.position.z <= 0) {
+                camera.position.z = Lerp(1.0, mousescroll.y * 0.1f, 0.0003f * clampz);
             } else {
-                camera.z = Lerp(camera.z, mousescroll.y * 0.1f + 1.0f , 0.0003f * clampz);
+                camera.position.z = Lerp(camera.position.z, mousescroll.y * 0.1f + 1.0f , 0.0003f * clampz);
             }
         }
         if (mousescroll.y <= 0) {mousescroll.y = 0;}
         if (isKeyDown("e")) {
-           camera.angle += (speed / 1000) * clampz;
+           camera.rotation.z += (speed / 1000) * clampz;
         } else if (isKeyDown("q")) {
-           camera.angle -= (speed / 1000) * clampz;
+           camera.rotation.z -= (speed / 1000) * clampz;
         }
     // DrawImage
         DrawImageShader(img,0, 0, SCREEN_WIDTH, SCREEN_HEIGHT,0,custom);
+    // Experimental WorkInProgress
+        //debug.wireframe = true; //debug single part
+        // TriangleGL 
+            //GLfloat x1 = SCREEN_WIDTH/2, y1 = 0;
+            //GLfloat x2 = 0.0f, y2 = SCREEN_HEIGHT;
+            //GLfloat x3 = SCREEN_WIDTH,  y3 = SCREEN_HEIGHT;
+            //Triangle(x1,y1,x2,y2,x3,y3,0,custom);
+            //Zelda(x1,y1,x2,y2,x3,y3,0,custom);
+        //debug.wireframe = false; //stop debugging
     // Getting Pixel Pointed Color 
         // Uncomment "GetPixel Pointed color" in main
         //int fontsize = Scaling(50);
@@ -68,10 +76,9 @@ int main(int arglenght, char** args)
     WindowInit(1920, 1080, "Grafenic");
     custom = LoadShader("./res/shaders/default.vert","./res/shaders/custom.frag");
     custom.hotreloading = true;//hotreloading for the shader or put this in the update "shader = ShaderHotReload(shader);" > in this case > "custom = ShaderHotReload(custom);"
-    pixelshaderdefault.hotreloading = true;// hot reload on the default pixel shader
-    fontshaderdefault.hotreloading = true;// hot reload on the default font shader
+    shaderdefault.hotreloading = true;// hot reload on the default pixel shader
     font = LoadFont("./res/fonts/Monocraft.ttf");font.nearest = true;
-    img = LoadImage("./res/images/Arch.png");
+    img = LoadImage("./res/images/Test.png");
     ClearColor((Color){75, 75, 75,100});
     while (!WindowState())
     {

@@ -20,6 +20,8 @@ cd grafenic
 
 **pong** -> ./src/pong.c (when ./build run pong)
 
+**3d** -> ./src/3d.c (when ./build run 3d)
+
 <details>
 <summary><h3>Variables</h3></summary>
 
@@ -65,13 +67,17 @@ cd grafenic
 
 **mousemoving:** Mouse movement (output)
 
-**camera.x:** Camera X position
+**camera.position.x:** Camera X position
 
-**camera.y:** Camera Y position
+**camera.position.y:** Camera Y position
 
-**camera.z:** Camera Z position
+**camera.position.z:** Camera Z position
 
-**camera.angle:** Camera angle
+**camera.rx:** Camera X rotation
+
+**camera.ry:** Camera Y rotation
+
+**camera.rz:** Camera Z rotation
 
 **debug.input:** Debug input (true by !default)
 

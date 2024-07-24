@@ -1,12 +1,11 @@
 #include "grafenic/init.c"
+#include "grafenic/ui.c"
 
 Font font;
-
 float mousecursorx;
 float mousecursory;
 float timer;
-
-#include "grafenic/ui.c"
+int bary;
 
 void update(void){
     // Input
@@ -39,12 +38,25 @@ void update(void){
             mousecursory = Lerp(mousecursory, mouse.y, lerpSpeed);
             timer += deltatime / (speedcursor * 1000.0f);
         }
-        if (IsInside(mousecursorx, mousecursory, 0, 0, SCREEN_WIDTH, SCREEN_HEIGHT / 12) && isKey("Space")) {
+        if (IsInside(mousecursorx, mousecursory, 0, SCREEN_HEIGHT - bary, SCREEN_WIDTH, SCREEN_HEIGHT / 12) && isKey("Space")) {
             DrawCircle(mousecursorx, mousecursory, circleSize, PURPLE);
             DrawCircleBorder(mousecursorx, mousecursory, circleSize, circleborderSize, VIOLET);
         } else {
             DrawCircle(mousecursorx, mousecursory, circleSize, VIOLET);
             DrawCircleBorder(mousecursorx, mousecursory, circleSize, circleborderSize, PURPLE);
+        }
+    // Bottom Bar Info
+        if(isKey("Space")){
+            bary = SCREEN_HEIGHT / 12;
+            DrawRect(0, SCREEN_HEIGHT - bary, SCREEN_WIDTH, bary, (Color){50, 50, 50,100});
+            DrawRectBorder(0, SCREEN_HEIGHT - bary, SCREEN_WIDTH, bary, Scaling(5), (Color){0, 0, 0,175});
+            int texts = 3;
+            // Mouse info
+                DrawTextRows( font,0,texts, text("Mouse = X: %.0f Y: %.0f", mouse.x, mouse.y));
+            // Scroll info
+                DrawTextRows( font,1,texts, text("Scroll = X: %.0f Y: %.0f", mousescroll.x, mousescroll.y));
+            // Window info 
+                DrawTextRows( font,2,texts, text("Size = X: %d Y: %d", SCREEN_WIDTH, SCREEN_HEIGHT));
         }
     // Modular ui.c functions
         int texts = 9;

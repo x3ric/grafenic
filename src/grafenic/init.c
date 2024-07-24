@@ -30,7 +30,7 @@ GLubyte* framebuffer;
 #include "input.c"
 #include "utils.c"
 #include "audio.c"
-#include "draw/init.c"
+#include "render/init.c"
 
 double deltatime;
 int fpslimit;
@@ -192,12 +192,11 @@ int WindowInit(int width, int height, const char* title)
         glfwSwapInterval(0);
     }
     glfwSetInputMode(window.w, GLFW_STICKY_KEYS, GLFW_TRUE);
-    glEnable(GL_DEPTH_TEST);
     glDepthFunc(GL_LEQUAL);
     glDisable(GL_CULL_FACE);
     glCullFace(GL_BACK);
     glEnable(GL_MULTISAMPLE);
-    InitializeOpenGL();
+    InitializeShader();
     print("Loaded\n");
     return 0;
 }
@@ -223,8 +222,7 @@ void WindowClose()
     glDeleteBuffers(1, &VBO);
     glDeleteBuffers(1, &EBO);
     glDeleteBuffers(2, PBO);
-    glDeleteProgram(fontshaderdefault.Program);
-    glDeleteProgram(pixelshaderdefault.Program);
+    glDeleteProgram(shaderdefault.Program);
     stbi_image_free(img.data);
     free(framebuffer);
     framebuffer = NULL;

@@ -1,0 +1,6 @@
+#include "color.c"
+#include "shader/init.c"
+#include "gpudraw.c"
+#include "cpudraw.c"
+#include "image.c"
+#include "text.c"   
