@@ -1,25 +1,41 @@
 typedef struct {
-    Vec3 position;
-    Vec3 rotation;
+    Vec3    position;
+    GLfloat angle;
+} Camera2D;
+
+Camera2D camera2d = {
+    0.0f, 0.0f, 0.0f,   // Position: x, y, z
+    0.0f                // Angle
+};
+
+typedef struct {
+    Vec3  position;
+    Vec3  rotation;
     float fov;
 } Camera;
 
 Camera camera = {
     0.0f, 0.0f, 0.0f,   // Position: x, y, z
     0.0f, 0.0f, 0.0f,   // Rotation: x, y, z
-    60.0f               // fov
+    60.0f               // Fov
 };
 
 #include "../math.c"
+
+typedef struct {
+    Vec3 position;
+    Vec3 globalposition;
+    Vec3 rotation;
+} Obj;
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   
 typedef struct {
     bool     perspective;
     Shader   shader;
     GLfloat *vertices;
     GLuint  *indices;
-    int      triangle_count;
     GLfloat  size_vertices;
     GLfloat  size_indices;
+    Obj      transform;
 } ShaderObject;
 
 void RenderShader(ShaderObject obj) {
@@ -31,10 +47,16 @@ void RenderShader(ShaderObject obj) {
         GLfloat Model[16];
         GLfloat View[16];
         if(obj.perspective){
-            MatrixPerspective(camera.fov, SCREEN_WIDTH/SCREEN_HEIGHT, 0.1f, 100.0f, Projection);
-            MatrixRotate(camera.rotation.x, camera.rotation.y, camera.rotation.z, Model);
-            MatrixLookAt(camera.position.x, camera.position.y, camera.position.z + 3.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, View);
+            Vec3 pos = obj.transform.position;
+            Vec3 gpos = obj.transform.globalposition;
+            Vec3 rot = obj.transform.rotation;
+            MatrixPerspective(camera.fov, SCREEN_WIDTH/SCREEN_HEIGHT, 0.001f, 1000.0f, Projection);
+            MatrixRotate(rot.x, rot.y, rot.z, Model);
+            MatrixTranslate(gpos.x, gpos.y, gpos.z, Model);
+            MatrixLookAt(pos.x, pos.y, pos.z + 3.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, View);
         } else {
+            if(camera2d.position.z <= 0.0f)
+                camera2d.position.z += 1.0f;
             MatrixOrthographic(0.0f, SCREEN_WIDTH, SCREEN_HEIGHT, 0.0f, -1.0f, 1.0f, Projection);
         }
     // Debug
@@ -59,16 +81,15 @@ void RenderShader(ShaderObject obj) {
         if(obj.perspective){
             glUniformMatrix4fv(glGetUniformLocation(obj.shader.Program, "view"), 1, GL_FALSE, View);
             glUniformMatrix4fv(glGetUniformLocation(obj.shader.Program, "model"), 1, GL_FALSE, Model);
+        } else {
+            glUniform3f(glGetUniformLocation(obj.shader.Program, "position"), camera2d.position.x, camera2d.position.y, camera2d.position.z);
+            glUniform1f(glGetUniformLocation(obj.shader.Program, "angle"), camera2d.angle);
         }
-        glUniform3f(glGetUniformLocation(obj.shader.Program, "position"), camera.position.x, camera.position.y, camera.position.z);
-        glUniform3f(glGetUniformLocation(obj.shader.Program, "rotation"), camera.rotation.x, camera.rotation.y, camera.rotation.z);
         glUniform1f(glGetUniformLocation(obj.shader.Program, "iTime"), glfwGetTime());
         glUniform2f(glGetUniformLocation(obj.shader.Program, "iResolution"), SCREEN_WIDTH, SCREEN_HEIGHT);
         glUniform2f(glGetUniformLocation(obj.shader.Program, "iMouse"), mouse.x, mouse.y);
     // Draw using indices
-        glEnable(GL_DEPTH_TEST);
-        glDrawElements(GL_TRIANGLES, obj.triangle_count, GL_UNSIGNED_INT, 0);
-        glEnable(GL_DEPTH_TEST);
+        glDrawElements(GL_TRIANGLES, obj.size_indices / sizeof(GLuint), GL_UNSIGNED_INT, 0);
     // Unbind shader program
         glUseProgram(0);
         glEnableVertexAttribArray(0);
@@ -84,12 +105,12 @@ void Triangle(GLfloat x1, GLfloat y1, GLfloat x2, GLfloat y2, GLfloat x3, GLfloa
     GLfloat cosAngle = cos(angleInRadians);
     GLfloat sinAngle = sin(angleInRadians);
     //Camera Movement
-    x1 += camera.position.x;
-    y1 += camera.position.y;
-    x2 += camera.position.x;
-    y2 += camera.position.y;
-    x3 += camera.position.x;
-    y3 += camera.position.y;
+    x1 += camera2d.position.x;
+    y1 += camera2d.position.y;
+    x2 += camera2d.position.x;
+    y2 += camera2d.position.y;
+    x3 += camera2d.position.x;
+    y3 += camera2d.position.y;
     // Calculate the center of the tinagle for rotation
     float centerX = (x1 + x2 + x3) / 3.0f;
     float centerY = (y1 + y2 + y3) / 3.0f;
@@ -117,7 +138,7 @@ void Triangle(GLfloat x1, GLfloat y1, GLfloat x2, GLfloat y2, GLfloat x3, GLfloa
     GLuint indices[] = {
         0,1,2
     };
-    RenderShader((ShaderObject){false,shader,vertices,indices,3,sizeof(vertices),sizeof(indices)});
+    RenderShader((ShaderObject){false,shader,vertices,indices,sizeof(vertices),sizeof(indices)});
 }
 
 void Rect(float x, float y, float width, float height, GLfloat angle,Shader shader) {
@@ -127,8 +148,8 @@ void Rect(float x, float y, float width, float height, GLfloat angle,Shader shad
     GLfloat cosAngle = cos(angleInRadians);
     GLfloat sinAngle = sin(angleInRadians);
     //Camera Movement
-    x += camera.position.x;
-    y += camera.position.y;
+    x += camera2d.position.x;
+    y += camera2d.position.y;
     // Calculate the center of the rect for rotation
     float centerX = x + width / 2.0f;
     float centerY = y + height / 2.0f;
@@ -163,7 +184,7 @@ void Rect(float x, float y, float width, float height, GLfloat angle,Shader shad
         0,1,2,             
         3,4,5              
     };                                                                                        
-    RenderShader((ShaderObject){false,shader,vertices,indices,6,sizeof(vertices),sizeof(indices)});
+    RenderShader((ShaderObject){false,shader,vertices,indices,sizeof(vertices),sizeof(indices)});
 }
 
 void Line(float x0, float y0, float x1, float y1, int thickness, Shader shader) {
@@ -205,7 +226,7 @@ void Line(float x0, float y0, float x1, float y1, int thickness, Shader shader) 
         0, 1, 2,
         0, 2, 3
     };
-    RenderShader((ShaderObject){false,shader,vertices,indices,6,sizeof(vertices),sizeof(indices)});
+    RenderShader((ShaderObject){false,shader,vertices,indices,sizeof(vertices),sizeof(indices)});
 }
 
 void Zelda(GLfloat x1, GLfloat y1, GLfloat x2, GLfloat y2, GLfloat x3, GLfloat y3, GLfloat angle, Shader shader) {
@@ -215,12 +236,12 @@ void Zelda(GLfloat x1, GLfloat y1, GLfloat x2, GLfloat y2, GLfloat x3, GLfloat y
     GLfloat cosAngle = cos(angleInRadians);
     GLfloat sinAngle = sin(angleInRadians);
     //Camera Movement
-    x1 += camera.position.x;
-    y1 += camera.position.y;
-    x2 += camera.position.x;
-    y2 += camera.position.y;
-    x3 += camera.position.x;
-    y3 += camera.position.y;
+    x1 += camera2d.position.x;
+    y1 += camera2d.position.y;
+    x2 += camera2d.position.x;
+    y2 += camera2d.position.y;
+    x3 += camera2d.position.x;
+    y3 += camera2d.position.y;
     // Calculate the center of the triangle for rotation
     float centerX = (x1 + x2 + x3) / 3.0f;
     float centerY = (y1 + y2 + y3) / 3.0f;
@@ -265,35 +286,64 @@ void Zelda(GLfloat x1, GLfloat y1, GLfloat x2, GLfloat y2, GLfloat x3, GLfloat y
         3, 2, 4, // Inner Triangle 2 bottom right     
         5, 4, 1  // Inner Triangle 3 top middle 
     };                          
-    RenderShader((ShaderObject){false,shader,vertices,indices,9,sizeof(vertices),sizeof(indices)});
+    RenderShader((ShaderObject){false,shader,vertices,indices,sizeof(vertices),sizeof(indices)});
 }
 
-void Cube(GLfloat x, GLfloat y, GLfloat z, GLfloat size, GLfloat angleX, GLfloat angleY, GLfloat angleZ, Shader shader) {
-    GLfloat halfSize = size / 2.0f;
+typedef struct {
+    Obj    obj;
+    int    size;
+    Shader shader;
+} CubeObject;
+
+void Cube(CubeObject cube) {
+    GLfloat halfSize = cube.size / 2.0f;
+    Vec3 pos = cube.obj.position;
+    Vec3 rot = cube.obj.rotation;
     GLfloat vertices[] = {
-        // Base vertices (before rotation) with texture coordinates
-        x - halfSize, y - halfSize, z + halfSize,  0.0f, 0.0f,  // Vertex 0
-        x + halfSize, y - halfSize, z + halfSize,  1.0f, 0.0f,  // Vertex 1
-        x + halfSize, y + halfSize, z + halfSize,  1.0f, 1.0f,  // Vertex 2
-        x - halfSize, y + halfSize, z + halfSize,  0.0f, 1.0f,  // Vertex 3
-        x - halfSize, y - halfSize, z - halfSize,  0.0f, 0.0f,  // Vertex 4
-        x + halfSize, y - halfSize, z - halfSize,  1.0f, 0.0f,  // Vertex 5
-        x + halfSize, y + halfSize, z - halfSize,  1.0f, 1.0f,  // Vertex 6
-        x - halfSize, y + halfSize, z - halfSize,  0.0f, 1.0f   // Vertex 7
+        // Front face
+        pos.x - halfSize, pos.y - halfSize, pos.z + halfSize, 0.0f, 0.0f, // Vertex 0
+        pos.x + halfSize, pos.y - halfSize, pos.z + halfSize, 1.0f, 0.0f, // Vertex 1
+        pos.x + halfSize, pos.y + halfSize, pos.z + halfSize, 1.0f, 1.0f, // Vertex 2
+        pos.x - halfSize, pos.y + halfSize, pos.z + halfSize, 0.0f, 1.0f, // Vertex 3
+        // Back face
+        pos.x - halfSize, pos.y - halfSize, pos.z - halfSize, 1.0f, 0.0f, // Vertex 4
+        pos.x + halfSize, pos.y - halfSize, pos.z - halfSize, 0.0f, 0.0f, // Vertex 5
+        pos.x + halfSize, pos.y + halfSize, pos.z - halfSize, 0.0f, 1.0f, // Vertex 6
+        pos.x - halfSize, pos.y + halfSize, pos.z - halfSize, 1.0f, 1.0f, // Vertex 7
+        // Top face
+        pos.x - halfSize, pos.y + halfSize, pos.z - halfSize, 0.0f, 1.0f, // Vertex 8
+        pos.x + halfSize, pos.y + halfSize, pos.z - halfSize, 1.0f, 1.0f, // Vertex 9
+        pos.x + halfSize, pos.y + halfSize, pos.z + halfSize, 1.0f, 0.0f, // Vertex 10
+        pos.x - halfSize, pos.y + halfSize, pos.z + halfSize, 0.0f, 0.0f, // Vertex 11
+        // Bottom face
+        pos.x - halfSize, pos.y - halfSize, pos.z - halfSize, 0.0f, 0.0f, // Vertex 12
+        pos.x + halfSize, pos.y - halfSize, pos.z - halfSize, 1.0f, 0.0f, // Vertex 13
+        pos.x + halfSize, pos.y - halfSize, pos.z + halfSize, 1.0f, 1.0f, // Vertex 14
+        pos.x - halfSize, pos.y - halfSize, pos.z + halfSize, 0.0f, 1.0f, // Vertex 15
+        // Left face
+        pos.x - halfSize, pos.y - halfSize, pos.z - halfSize, 0.0f, 0.0f, // Vertex 16
+        pos.x - halfSize, pos.y + halfSize, pos.z - halfSize, 1.0f, 0.0f, // Vertex 17
+        pos.x - halfSize, pos.y + halfSize, pos.z + halfSize, 1.0f, 1.0f, // Vertex 18
+        pos.x - halfSize, pos.y - halfSize, pos.z + halfSize, 0.0f, 1.0f, // Vertex 19
+        // Right face
+        pos.x + halfSize, pos.y - halfSize, pos.z + halfSize, 0.0f, 0.0f, // Vertex 20
+        pos.x + halfSize, pos.y + halfSize, pos.z + halfSize, 1.0f, 0.0f, // Vertex 21
+        pos.x + halfSize, pos.y + halfSize, pos.z - halfSize, 1.0f, 1.0f, // Vertex 22
+        pos.x + halfSize, pos.y - halfSize, pos.z - halfSize, 0.0f, 1.0f  // Vertex 23
     };
     // Apply rotation to all vertices
-    for (int i = 0; i < 8; ++i) {
-        RotateVertex(&vertices[i * 5], &vertices[i * 5 + 1], &vertices[i * 5 + 2], angleX, angleY, angleZ);
+    for (int i = 0; i < 24; ++i) {
+        RotateVertex(&vertices[i * 5], &vertices[i * 5 + 1], &vertices[i * 5 + 2], rot.x, rot.y, rot.z);
     }
     GLuint indices[] = {
-        0, 1, 2, 2, 3, 0, // Front face
-        4, 5, 6, 6, 7, 4, // Back face
-        0, 1, 5, 5, 4, 0, // Bottom face
-        2, 3, 7, 7, 6, 2, // Top face
-        0, 3, 7, 7, 4, 0, // Left face
-        1, 2, 6, 6, 5, 1  // Right face
+        0, 1, 2, 2, 3, 0,    // Front face
+        4, 5, 6, 6, 7, 4,    // Back face
+        12, 13, 14, 14, 15, 12, // Bottom face
+        8, 9, 10, 10, 11, 8,    // Top face
+        16, 17, 18, 18, 19, 16, // Left face
+        20, 21, 22, 22, 23, 20  // Right face
     };
-    RenderShader((ShaderObject){true, shader, vertices, indices, 36, sizeof(vertices), sizeof(indices)});
+    RenderShader((ShaderObject){true, cube.shader, vertices, indices, sizeof(vertices), sizeof(indices), cube.obj});
 }
 
 void Framebuffer(float x, float y, float width, float height) {

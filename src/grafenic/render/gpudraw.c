@@ -136,3 +136,25 @@ void DrawTriangleBorder(int x1, int y1, int x2, int y2, int x3, int y3, int thic
     DrawLine(x3, y3, x1, y1, thickness, color);
     DrawLine(x2, y2, x3, y3, thickness, color);
 }
+
+void DrawCube(GLfloat size, GLfloat x, GLfloat y, GLfloat z, GLfloat rotx, GLfloat roty, GLfloat rotz, Color color) {
+    if (color.a == 0) color.a = 255;
+    static GLuint textureID;
+    glEnable(GL_BLEND);glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glGenTextures(1, &textureID);
+    glBindTexture(GL_TEXTURE_2D, textureID);
+    unsigned char pixels[] = { color.r, color.g, color.b, color.a };
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 1, 1, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
+    glBindTexture(GL_TEXTURE_2D, textureID);
+    Cube((CubeObject){{
+        0.0f,   0.0f,   0.0f, // Position: x, y, z
+        x,      y,      z,    // GlobalPosition: x, y, z
+        rotx,   roty,   rotz, // Rotation: x, y, z
+    }, size, // Size
+    shaderdefault // Shader
+    });
+    glDisable(GL_BLEND);
+    glDisable(GL_TEXTURE_2D);
+    glBindTexture(GL_TEXTURE_2D, 0);
+    glDeleteTextures(1, &textureID);
+}

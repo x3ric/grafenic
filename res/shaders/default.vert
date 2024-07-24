@@ -6,7 +6,7 @@ uniform int perspective;
 uniform vec2 iMouse;
 uniform vec2 iResolution;
 uniform float iTime;
-uniform vec3 rotation;
+uniform float angle;
 uniform vec3 position;
 uniform mat4 projection;
 uniform mat4 view;
@@ -24,8 +24,8 @@ void main() {
             vec2 relativePos = aPos.xy - pivot;
         // rotationMatrix
             mat2 rotationMatrix = mat2(
-                cos(rotation.z), -sin(rotation.z),
-                sin(rotation.z), cos(rotation.z)
+                cos(angle), -sin(angle),
+                sin(angle), cos(angle)
             );
         // Apply rotation
             vec2 finalPos = rotationMatrix * relativePos + pivot;

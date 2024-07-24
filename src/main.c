@@ -63,12 +63,10 @@ int main(int arglenght, char** args)
       // mousescroll = {x,y} output;
       // mousemoving = Bool output; 
       // mousescrolling = Bool output; 
-      // camera.x = float;
-      // camera.y = float;
-      // camera.z = float;
-      // camera.rx = rotation x;
-      // camera.ry = rotation y;
-      // camera.rz = rotation z;
+      // camera2d.x = float;
+      // camera2d.y = float;
+      // camera2d.z = float;
+      // camera2d.angle = rotation;
       // debug.input = true;
       // debug.wireframe = true;
       // debug.fps = true;

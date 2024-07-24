@@ -1,12 +1,16 @@
 
 void MatrixLookAt(GLfloat eyeX, GLfloat eyeY, GLfloat eyeZ, GLfloat centerX, GLfloat centerY, GLfloat centerZ, GLfloat upX, GLfloat upY, GLfloat upZ, GLfloat* matrix) {
+    // Compute forward vector
     GLfloat f[3] = { centerX - eyeX, centerY - eyeY, centerZ - eyeZ };
     GLfloat norm = sqrtf(f[0] * f[0] + f[1] * f[1] + f[2] * f[2]);
     f[0] /= norm; f[1] /= norm; f[2] /= norm;
+    // Compute right vector
     GLfloat s[3] = { f[1] * upZ - f[2] * upY, f[2] * upX - f[0] * upZ, f[0] * upY - f[1] * upX };
     norm = sqrtf(s[0] * s[0] + s[1] * s[1] + s[2] * s[2]);
     s[0] /= norm; s[1] /= norm; s[2] /= norm;
+    // Compute up vector
     GLfloat u[3] = { s[1] * f[2] - s[2] * f[1], s[2] * f[0] - s[0] * f[2], s[0] * f[1] - s[1] * f[0] };
+    // Fill matrix
     matrix[0] = s[0]; matrix[1] = u[0]; matrix[2] = -f[0]; matrix[3] = 0.0f;
     matrix[4] = s[1]; matrix[5] = u[1]; matrix[6] = -f[1]; matrix[7] = 0.0f;
     matrix[8] = s[2]; matrix[9] = u[2]; matrix[10] = -f[2]; matrix[11] = 0.0f;
@@ -26,10 +30,11 @@ void MatrixRotate(GLfloat angleX, GLfloat angleY, GLfloat angleZ, GLfloat* matri
     matrix[12] = 0.0f; matrix[13] = 0.0f; matrix[14] = 0.0f; matrix[15] = 1.0f;
 }
 
+
 void MatrixPerspective(GLfloat fov, GLfloat aspect, GLfloat near, GLfloat far, GLfloat* matrix) {
     GLfloat tanHalfFov = tanf(fov / 2.0f * M_PI / 180.0f);
     memset(matrix, 0, sizeof(GLfloat) * 16);
-    matrix[0] = -1.0f / (aspect * tanHalfFov); // Negated "Flipped x axis" to be orthographic consistent
+    matrix[0] = -1.0f / (aspect * tanHalfFov);
     matrix[5] = 1.0f / tanHalfFov;
     matrix[10] = -(far + near) / (far - near);
     matrix[11] = -1.0f;
@@ -38,14 +43,12 @@ void MatrixPerspective(GLfloat fov, GLfloat aspect, GLfloat near, GLfloat far, G
 }
 
 void MatrixOrthographic(GLfloat left, GLfloat right, GLfloat bottom, GLfloat top, GLfloat zNear, GLfloat zFar, GLfloat *matrix) {
-    if(camera.position.z <= 0.0f)
-        camera.position.z += 1.0f;
     memset(matrix, 0, sizeof(GLfloat) * 16);
-    matrix[0] = 2.0f * camera.position.z / SCREEN_WIDTH;       // Horizontal scaling factor
-    matrix[5] = -2.0f * camera.position.z / SCREEN_HEIGHT;     // Vertical scaling factor
+    matrix[0] = 2.0f * camera2d.position.z / SCREEN_WIDTH;     // Horizontal scaling factor
+    matrix[5] = -2.0f * camera2d.position.z / SCREEN_HEIGHT;   // Vertical scaling factor
     matrix[10] = -2.0f / (zFar - zNear);                       // Depth scaling factor
-    matrix[12] = -(right + left) / SCREEN_WIDTH * camera.position.z + camera.position.x * 2.0f * camera.position.z / SCREEN_WIDTH;  // X offset
-    matrix[13] = (top + bottom) / SCREEN_HEIGHT * camera.position.z - camera.position.y * 2.0f * camera.position.z / SCREEN_HEIGHT; // Y offset
+    matrix[12] = -(right + left) / SCREEN_WIDTH * camera2d.position.z + camera2d.position.x * 2.0f * camera2d.position.z / SCREEN_WIDTH;  // X offset
+    matrix[13] = (top + bottom) / SCREEN_HEIGHT * camera2d.position.z - camera2d.position.y * 2.0f * camera2d.position.z / SCREEN_HEIGHT; // Y offset
     matrix[14] = -(zFar + zNear) / (zFar - zNear);             // Maps the z-range to [-1, 1]
     matrix[15] = 1.0f;                                         // Cordinate Scale
 }
@@ -66,31 +69,36 @@ void MatrixIdentity(GLfloat* out) {
     out[0] = out[5] = out[10] = out[15] = 1.0f;
 }
 
+void MatrixTranslate(GLfloat tx, GLfloat ty, GLfloat tz, GLfloat *result) {
+    MatrixIdentity(result);
+    result[12] = tx; // Translation in x
+    result[13] = ty; // Translation in y
+    result[14] = tz; // Translation in z
+}
+
 void RotateVertex(GLfloat *x, GLfloat *y, GLfloat *z, GLfloat angleX, GLfloat angleY, GLfloat angleZ) {
-    // Convert angles from degrees to radians
     GLfloat radX = angleX * (M_PI / 180.0f);
     GLfloat radY = angleY * (M_PI / 180.0f);
     GLfloat radZ = angleZ * (M_PI / 180.0f);
-    // Rotation matrices for each axis
+
     GLfloat Rx[16] = {
         1.0f, 0.0f, 0.0f, 0.0f,
-        0.0f, cos(radX), -sin(radX), 0.0f,
-        0.0f, sin(radX), cos(radX), 0.0f,
+        0.0f, cosf(radX), -sinf(radX), 0.0f,
+        0.0f, sinf(radX), cosf(radX), 0.0f,
         0.0f, 0.0f, 0.0f, 1.0f
     };
     GLfloat Ry[16] = {
-        cos(radY), 0.0f, sin(radY), 0.0f,
+        cosf(radY), 0.0f, sinf(radY), 0.0f,
         0.0f, 1.0f, 0.0f, 0.0f,
-        -sin(radY), 0.0f, cos(radY), 0.0f,
+        -sinf(radY), 0.0f, cosf(radY), 0.0f,
         0.0f, 0.0f, 0.0f, 1.0f
     };
     GLfloat Rz[16] = {
-        cos(radZ), -sin(radZ), 0.0f, 0.0f,
-        sin(radZ), cos(radZ), 0.0f, 0.0f,
+        cosf(radZ), -sinf(radZ), 0.0f, 0.0f,
+        sinf(radZ), cosf(radZ), 0.0f, 0.0f,
         0.0f, 0.0f, 1.0f, 0.0f,
         0.0f, 0.0f, 0.0f, 1.0f
     };
-    // Combine rotations: R = Rz * (Ry * Rx)
     GLfloat Rxy[16];
     GLfloat R[16];
     // Multiply Ry by Rx

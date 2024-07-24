@@ -18,36 +18,34 @@ void update(void){
             speed = 0.05f;
         }
         if (isKeyDown("w")) {
-            camera.position.y += (speed / 10) * clampz;
-        }
-        if (isKeyDown("s")) {
-            camera.position.y -= (speed / 10) * clampz;
+            camera2d.position.y += (speed / 10) * clampz;
+        } else if (isKeyDown("s")) {
+            camera2d.position.y -= (speed / 10) * clampz;
         }
         if (isKeyDown("a")) {
-            camera.position.x += (speed / 10) * clampz;
-        }
-        if (isKeyDown("d")) {
-            camera.position.x -= (speed / 10) * clampz;
+            camera2d.position.x += (speed / 10) * clampz;
+        } else if (isKeyDown("d")) {
+            camera2d.position.x -= (speed / 10) * clampz;
         }
         if (isKeyDown("r")) {
             speed = 0.0f;
-            camera.position.x = Lerp(camera.position.x, 0.0f, 0.0003f * clampz);
-            camera.position.y = Lerp(camera.position.y, 0.0f, 0.0003f * clampz);
-            camera.position.z = Lerp(camera.position.z, 1.0f, 0.0003f * clampz);
-            camera.rotation.z = Lerp(camera.rotation.z, (GLfloat)0.0f, 0.0003f * clampz);
+            camera2d.position.x = Lerp(camera2d.position.x, 0.0f, 0.0003f * clampz);
+            camera2d.position.y = Lerp(camera2d.position.y, 0.0f, 0.0003f * clampz);
+            camera2d.position.z = Lerp(camera2d.position.z, 1.0f, 0.0003f * clampz);
+            camera2d.angle = Lerp(camera2d.angle, (GLfloat)0.0f, 0.0003f * clampz);
             mousescroll.y = 0.0f;
         } else {
-            if (camera.position.z <= 0) {
-                camera.position.z = Lerp(1.0, mousescroll.y * 0.1f, 0.0003f * clampz);
+            if (camera2d.position.z <= 0) {
+                camera2d.position.z = Lerp(1.0, mousescroll.y * 0.1f, 0.0003f * clampz);
             } else {
-                camera.position.z = Lerp(camera.position.z, mousescroll.y * 0.1f + 1.0f , 0.0003f * clampz);
+                camera2d.position.z = Lerp(camera2d.position.z, mousescroll.y * 0.1f + 1.0f , 0.0003f * clampz);
             }
         }
         if (mousescroll.y <= 0) {mousescroll.y = 0;}
         if (isKeyDown("e")) {
-           camera.rotation.z += (speed / 1000) * clampz;
+           camera2d.angle += (speed / 1000) * clampz;
         } else if (isKeyDown("q")) {
-           camera.rotation.z -= (speed / 1000) * clampz;
+           camera2d.angle -= (speed / 1000) * clampz;
         }
     // DrawImage
         DrawImageShader(img,0, 0, SCREEN_WIDTH, SCREEN_HEIGHT,0,custom);

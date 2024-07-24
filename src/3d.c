@@ -1,8 +1,11 @@
 #include "grafenic/init.c"
 #include "grafenic/ui.c"
-Font font;
 
+Font font;
+Image img;
 Vec3 cube;
+double lastscrolly = 0.0;
+double targetZ = 0.0;
 
 void update(void) {
     // Movement Camera
@@ -11,46 +14,60 @@ void update(void) {
         clampz = (deltatime);
         //print(text("Cam lerp: %.5f\n", clampz));
         if (isKeyDown("LeftShift")) {
-            speed = 0.15f;
+            speed = 0.0001f;
         } else {
-            speed = 0.05f;
+            speed = 0.00005f;
         }
         if (isKeyDown("w")) {
-            cube.x += (speed / 10) * clampz;
+            cube.y += speed * clampz;
+        } else if (isKeyDown("s")) {
+            cube.y -= speed * clampz;
         }
-        if (isKeyDown("s")) {
-            cube.x -= (speed / 10) * clampz;
-        }   
         if (isKeyDown("a")) {
-            cube.y += (speed / 10) * clampz; 
+            cube.x += speed * clampz;
+        } else if (isKeyDown("d")) {
+            cube.x -= speed * clampz;
         }
-        if (isKeyDown("d")) {
-            cube.y -= (speed / 10) * clampz;
+        if (isKeyDown("e")) {
+            cube.z += speed * clampz;
+        } else if (isKeyDown("q")) {
+            cube.z -= speed * clampz;
         }
         if (isKeyDown("r")) {
             speed = 0.0f;
-            cube.x = Lerp(cube.x, 0.0f, 0.0003f * clampz);
-            cube.y = Lerp(cube.y, 0.0f, 0.0003f * clampz);
-            cube.z = Lerp(cube.y, 0.0f, 0.0003f * clampz);
-            mousescroll.y = 0.0f;
+            targetZ = 0.0f;
+            mousescroll.y = 0;
+            lastscrolly = mousescroll.y;
+            cube.x = Lerp(cube.x, 0.0f, 0.0001f * clampz);
+            cube.y = Lerp(cube.y, 0.0f, 0.0001f * clampz);
+            cube.z = Lerp(cube.z, 0.0f, 0.0001f * clampz);
         } else {
-            if (cube.z <= 0) {
-                cube.z = Lerp(1.0, mousescroll.y * 0.1f, 0.0003f * clampz);
-            } else {
-                cube.z = Lerp(cube.z, mousescroll.y * 0.1f + 1.0f , 0.0003f * clampz);
+            if(cube.z == targetZ)
+                targetZ = cube.z;
+            if (lastscrolly != mousescroll.y) {
+                targetZ = cube.z + (mousescroll.y > lastscrolly ? mousescroll.y-lastscrolly : lastscrolly+mousescroll.y );
+                mousescroll.y = 0;
             }
+            cube.z = Lerp(cube.z, targetZ, 0.0001f * clampz);
+            lastscrolly = mousescroll.y;
         }
-        if (mousescroll.y <= 0) {mousescroll.y = 0;}
-        if (isKeyDown("e")) {
-           cube.z += (speed / 1000) * clampz;
-        } else if (isKeyDown("q")) {
-           cube.z -= (speed / 1000) * clampz;
-        }
+    // Rotation Vec3
+        Vec3 rot;
+        rot.x = deltatime * 0.2f * 100.0f;
+        rot.y = deltatime * 0.3f * 100.0f;
+        rot.z = deltatime * 0.4f * 100.0f;
     // 3d envoiriment
-        float angleX = deltatime * 0.2f * 100.0f;
-        float angleY = deltatime * 0.3f * 100.0f;
-        float angleZ = deltatime * 0.4f * 100.0f;
-        Cube(0.0f, 0.0f, 0.0f, 1.0f, cube.x + angleX, cube.y + angleY, cube.z + angleZ, shaderdefault);
+        //debug.wireframe = true; //debug single part
+        //DrawCube(1.0f, cube.x, cube.y, cube.z, rot.x, rot.y, rot.z, GRAY);
+        DrawCubeImage( img,          // Texture 
+        (CubeObject){{
+            0.0f, 0.0f, 0.0f,       // Position: x, y, z
+            cube.x, cube.y, cube.z, // GlobalPosition: x, y, z
+            rot.x, rot.y, rot.z,    // Rotation: x, y, z
+        }, 1.0,                     // Size
+        shaderdefault               // Shader
+        });
+        //debug.wireframe = false; //stop debugging
     // Modular ui.c functions
         Fps(0, 0, font, Scaling(50));
         ExitPromt(font);  
@@ -59,6 +76,8 @@ void update(void) {
 int main(int argc, char** argv) {
     WindowInit(1920, 1080, "Grafenic");
     font = LoadFont("./res/fonts/Monocraft.ttf");font.nearest = true;
+    img = LoadImage("./res/images/Test.png");
+    shaderdefault.hotreloading = true;
     ClearColor((Color){75, 75, 75, 100});
     while (!WindowState()) {
         WindowClear();

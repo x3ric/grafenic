@@ -67,18 +67,6 @@ cd grafenic
 
 **mousemoving:** Mouse movement (output)
 
-**camera.position.x:** Camera X position
-
-**camera.position.y:** Camera Y position
-
-**camera.position.z:** Camera Z position
-
-**camera.rx:** Camera X rotation
-
-**camera.ry:** Camera Y rotation
-
-**camera.rz:** Camera Z rotation
-
 **debug.input:** Debug input (true by !default)
 
 **debug.wireframe:** Debug wireframe (true by !default)

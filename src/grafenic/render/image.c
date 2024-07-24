@@ -43,6 +43,14 @@ void DrawImageShader(Image image, float x, float y, float width, float height, G
     glDisable(GL_BLEND);
 }
 
+void DrawCubeImage(Image image, CubeObject obj) {
+    glEnable(GL_BLEND);glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glBindTexture(GL_TEXTURE_2D, image.raw);
+    Cube(obj);
+    glBindTexture(GL_TEXTURE_2D, 0);
+    glDisable(GL_BLEND);
+}
+
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include <stb_image_write.h>
 

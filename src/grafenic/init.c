@@ -192,6 +192,7 @@ int WindowInit(int width, int height, const char* title)
         glfwSwapInterval(0);
     }
     glfwSetInputMode(window.w, GLFW_STICKY_KEYS, GLFW_TRUE);
+    glEnable(GL_DEPTH_TEST);
     glDepthFunc(GL_LEQUAL);
     glDisable(GL_CULL_FACE);
     glCullFace(GL_BACK);
