@@ -21,37 +21,37 @@ Ball ball;
 int leftScore = 0, rightScore = 0;
 
 void resetBall() {
-    ball.x = SCREEN_WIDTH / 2 - BALL_SIZE / 2;
-    ball.y = SCREEN_HEIGHT / 2 - BALL_SIZE / 2;
+    ball.x = window.screen_width / 2 - BALL_SIZE / 2;
+    ball.y = window.screen_height / 2 - BALL_SIZE / 2;
     ball.speedX = BALL_SPEED * ((rand() % 2 == 0) ? 1 : -1);
     ball.speedY = BALL_SPEED * ((rand() % 2 == 0) ? 1 : -1);
 }
 
 void update(void) {
     // Force Screen at 1920x1080
-        SCREEN_WIDTH = 1920;
-        SCREEN_HEIGHT = 1080;
+        window.screen_width = 1920;
+        window.screen_height = 1080;
     // Enemy Ai
-        rightPaddle.y = Lerp(rightPaddle.y, SCREEN_HEIGHT - ball.y - (rightPaddle.height/2), LERP_ENEMY);
+        rightPaddle.y = Lerp(rightPaddle.y, window.screen_height - ball.y - (rightPaddle.height/2), LERP_ENEMY);
     // Move paddles based on user input
         if (isKeyDown("w")) leftPaddle.y = Lerp(leftPaddle.y, (leftPaddle.y - leftPaddle.speed), LERP);
         if (isKeyDown("s")) leftPaddle.y = Lerp(leftPaddle.y, (leftPaddle.y + leftPaddle.speed), LERP);
     // Ensure paddles stay within screen bounds
-        leftPaddle.y = fminf(fmaxf(leftPaddle.y, 0), SCREEN_HEIGHT - leftPaddle.height);
-        rightPaddle.y = fminf(fmaxf(rightPaddle.y, 0), SCREEN_HEIGHT - rightPaddle.height);
+        leftPaddle.y = fminf(fmaxf(leftPaddle.y, 0), window.screen_height - leftPaddle.height);
+        rightPaddle.y = fminf(fmaxf(rightPaddle.y, 0), window.screen_height - rightPaddle.height);
     // Move ball
         ball.x = Lerp(ball.x, (ball.x + ball.speedX), LERP);
         ball.y = Lerp(ball.y, (ball.y + ball.speedY), LERP);
     // Check collision with top and bottom walls
-        if (ball.y <= 0 || ball.y >= SCREEN_HEIGHT - ball.size) ball.speedY = -ball.speedY;
+        if (ball.y <= 0 || ball.y >= window.screen_height - ball.size) ball.speedY = -ball.speedY;
     // Check collision with the left paddle
         if ((ball.x - (ball.size / 2) <= leftPaddle.x + (Scaling(leftPaddle.width) / 2)) && 
-            IsInside((ball.x + (ball.size / 2)),(SCREEN_HEIGHT - ball.y - (ball.size / 2)),leftPaddle.x, leftPaddle.y, Scaling(leftPaddle.width), Scaling(leftPaddle.height))) {
+            IsInside((ball.x + (ball.size / 2)),(window.screen_height - ball.y - (ball.size / 2)),leftPaddle.x, leftPaddle.y, Scaling(leftPaddle.width), Scaling(leftPaddle.height))) {
             ball.speedX = -ball.speedX;
         }
     // Check collision with the right paddle
         if ((ball.x + (ball.size / 2) >= rightPaddle.x - (Scaling(rightPaddle.width) / 2)) && 
-            IsInside((ball.x + (ball.size / 2)),(SCREEN_HEIGHT - ball.y - (ball.size / 2)),rightPaddle.x, rightPaddle.y, Scaling(rightPaddle.width), Scaling(rightPaddle.height))) {
+            IsInside((ball.x + (ball.size / 2)),(window.screen_height - ball.y - (ball.size / 2)),rightPaddle.x, rightPaddle.y, Scaling(rightPaddle.width), Scaling(rightPaddle.height))) {
             ball.speedX = -ball.speedX;
         }
     // Check if the ball is out of bounds
@@ -59,12 +59,12 @@ void update(void) {
             rightScore++; // Increment adversary's score
             resetBall();
         } 
-        if (ball.x > SCREEN_WIDTH - ball.size) {
+        if (ball.x > window.screen_width - ball.size) {
             leftScore++; // Increment player's score
             resetBall();
         }
     // Draw ball
-        DrawCircle((ball.x + (ball.size / 2)), (SCREEN_HEIGHT - ball.y - (ball.size / 2)), (ball.size / 2), (Color){255, 255, 255, 255});
+        DrawCircle((ball.x + (ball.size / 2)), (window.screen_height - ball.y - (ball.size / 2)), (ball.size / 2), (Color){255, 255, 255, 255});
     // Draw paddles
         DrawRect(leftPaddle.x, leftPaddle.y, Scaling(leftPaddle.width), Scaling(leftPaddle.height), (Color){255, 255, 255, 255});
         DrawRect(rightPaddle.x, rightPaddle.y, Scaling(rightPaddle.width), Scaling(rightPaddle.height), (Color){255, 255, 255, 255});
@@ -72,8 +72,8 @@ void update(void) {
         const char* scoreText = text("%d - %d", leftScore, rightScore);
         const int fontSize = Scaling(35);
         const TextSize textSize = GetTextSize(font, fontSize, scoreText);
-        const int textX = (SCREEN_WIDTH - textSize.width) / 2;
-        const int textY = (SCREEN_HEIGHT - textSize.height);
+        const int textX = (window.screen_width - textSize.width) / 2;
+        const int textY = (window.screen_height - textSize.height);
         DrawText(textX, textY, font, fontSize, scoreText, (Color){255, 255, 255, 255});
 }
 
@@ -82,9 +82,9 @@ int main(int argc, char** argv) {
     WindowInit(1920, 1080, "Grafenic");
     font = LoadFont("./res/fonts/Monocraft.ttf");
     ClearColor((Color){0, 0, 0, 100});
-    leftPaddle = (Paddle){0,SCREEN_HEIGHT / 2 - PADDLE_HEIGHT / 2, PADDLE_WIDTH, PADDLE_HEIGHT, PADDLE_SPEED};
-    rightPaddle = (Paddle){SCREEN_WIDTH - (PADDLE_WIDTH), SCREEN_HEIGHT / 2 - PADDLE_HEIGHT / 2, PADDLE_WIDTH, PADDLE_HEIGHT, PADDLE_SPEED};
-    ball = (Ball){SCREEN_WIDTH/2,SCREEN_HEIGHT/2, BALL_SIZE, BALL_SPEED, BALL_SPEED};
+    leftPaddle = (Paddle){0,window.screen_height / 2 - PADDLE_HEIGHT / 2, PADDLE_WIDTH, PADDLE_HEIGHT, PADDLE_SPEED};
+    rightPaddle = (Paddle){window.screen_width - (PADDLE_WIDTH), window.screen_height / 2 - PADDLE_HEIGHT / 2, PADDLE_WIDTH, PADDLE_HEIGHT, PADDLE_SPEED};
+    ball = (Ball){window.screen_width/2,window.screen_height/2, BALL_SIZE, BALL_SPEED, BALL_SPEED};
     while (!WindowState()) {
         WindowClear();
         update();

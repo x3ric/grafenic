@@ -1,27 +1,27 @@
 
 void DrawPixel(int x, int y, Color color) {
-    if (x < 0 || x >= SCREEN_WIDTH || y < 0 || y >= SCREEN_HEIGHT) {
+    if (x < 0 || x >= window.screen_width || y < 0 || y >= window.screen_height) {
         return;
     }
     if (color.a == 0) color.a = 255;
-    int index = (y * SCREEN_WIDTH + x) * 4;
+    int index = (y * window.screen_width + x) * 4;
     float alpha = color.a / 255.0f;
     float invAlpha = 1.0f - alpha;
-    pixels = true;
-    if(framebuffer){
-        framebuffer[index]     = (GLubyte)(color.r * alpha + framebuffer[index]     * invAlpha);
-        framebuffer[index + 1] = (GLubyte)(color.g * alpha + framebuffer[index + 1] * invAlpha);
-        framebuffer[index + 2] = (GLubyte)(color.b * alpha + framebuffer[index + 2] * invAlpha);
-        framebuffer[index + 3] = color.a;
+    window.frame.pixels = true;
+    if(window.frame.buffer){
+        window.frame.buffer[index]     = (GLubyte)(color.r * alpha + window.frame.buffer[index]     * invAlpha);
+        window.frame.buffer[index + 1] = (GLubyte)(color.g * alpha + window.frame.buffer[index + 1] * invAlpha);
+        window.frame.buffer[index + 2] = (GLubyte)(color.b * alpha + window.frame.buffer[index + 2] * invAlpha);
+        window.frame.buffer[index + 3] = color.a;
     }
 }
 
 Color GetPixel(int x, int y) {
-    if (x < 0 || x >= SCREEN_WIDTH || y < 0 || y >= SCREEN_HEIGHT) {
+    if (x < 0 || x >= window.screen_width || y < 0 || y >= window.screen_height) {
         return (Color){0, 0, 0, 255};
     }
     GLubyte pixelData[4];
-    glReadPixels(x, SCREEN_HEIGHT - y, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, pixelData);
+    glReadPixels(x, window.screen_height - y, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, pixelData);
     Color color = {pixelData[0], pixelData[1], pixelData[2], pixelData[3]};
     return color;
 }
@@ -80,7 +80,7 @@ void DrawLinePixel(int x0, int y0, int x1, int y1, int thickness, Color color) {
 void DrawCirclePixel(int x, int y, int r, Color color) {
     if (color.a == 0) color.a = 255;
     int h = x;
-    int k = SCREEN_HEIGHT - y;
+    int k = window.screen_height - y;
     for (int i = h - r; i <= h + r; i++) {
         for (int j = k - r; j <= k + r; j++) {
             if ((i - h) * (i - h) + (j - k) * (j - k) <= r * r) {
@@ -93,7 +93,7 @@ void DrawCirclePixel(int x, int y, int r, Color color) {
 void DrawCircleBorderPixel(int x, int y, int r, int thickness, Color color) {
     if (color.a == 0) color.a = 255;
     int h = x;
-    int k = SCREEN_HEIGHT - y;
+    int k = window.screen_height - y;
     for (int i = h - r - thickness; i <= h + r + thickness; i++) {
         for (int j = k - r - thickness; j <= k + r + thickness; j++) {
             int distanceSquared = (i - h) * (i - h) + (j - k) * (j - k);

@@ -1,17 +1,6 @@
 #define MINIAUDIO_IMPLEMENTATION
 #include <miniaudio.h>
 
-ma_engine engine;
-ma_context context;
-ma_result result;
-ma_device device;
-ma_device_id deviceId;
-ma_device_config deviceConfig;
-ma_engine_config engineConfig;
-
-#define CHANNELS    2
-#define SAMPLE_RATE 48000
-
 // Engine "no sound preloaded"
 
     ma_result ma_engine_mod_init(const ma_engine_config* pConfig, ma_engine* pEngine,const char* titlesink)
@@ -215,35 +204,50 @@ ma_engine_config engineConfig;
             return result;
     }
 
-    const char* SINK_TITLE = "\0";
 
-    void AudioInit(){        
+    typedef struct {
+        int       channels;
+        int       sample_rate;
+        char*     sink_title;
+        ma_engine engine;
+    } Audio;
+
+    Audio audio = {
+     2,
+     48000,
+     "\0"
+    };
+  
+    void AudioInit(){       
+        ma_result result;
+        ma_engine_config engineConfig;
         engineConfig = ma_engine_config_init();
-        engineConfig.channels   = CHANNELS;
-        engineConfig.sampleRate = SAMPLE_RATE;
-        if(SINK_TITLE == "\0") {
-            SINK_TITLE = TITLE;
+        engineConfig.channels   = audio.channels;
+        engineConfig.sampleRate = audio.sample_rate;
+        if(audio.sink_title != "\0") {
+           result = ma_engine_mod_init(&engineConfig, &audio.engine,audio.sink_title);
+        } else {
+           result = ma_engine_mod_init(&engineConfig, &audio.engine,window.title);
         }
-        result = ma_engine_mod_init(&engineConfig, &engine,SINK_TITLE);
         if (result != MA_SUCCESS) {
             printf("Audio Engine initialization failed");
         }
     }
 
     void AudioVolume(float value){
-        ma_engine_set_volume(&engine,value);
+        ma_engine_set_volume(&audio.engine,value);
     }
 
     float GetAudioVolume(){
-        return ma_engine_get_volume(&engine);
+        return ma_engine_get_volume(&audio.engine);
     }
 
     void AudioPlay(char *file){
-        ma_engine_play_sound(&engine, file, NULL);
+        ma_engine_play_sound(&audio.engine, file, NULL);
     }
 
     void AudioStop() {
-        if(&engine){ma_engine_uninit(&engine);}
+        if(&audio.engine){ma_engine_uninit(&audio.engine);}
     }
 
 // Sound loading
@@ -258,7 +262,7 @@ ma_engine_config engineConfig;
             printf("Failed to allocate memory for Sound\n");
             return NULL;
         }
-        result = ma_sound_init_from_file(&engine, file, 0, NULL, NULL,&sound->ma);
+        ma_result result = ma_sound_init_from_file(&audio.engine, file, 0, NULL, NULL,&sound->ma);
         if (result != MA_SUCCESS) {
             printf("Failed to load sound: %s\n", file);
             free(sound);

@@ -1,11 +1,5 @@
 
-void glTexOpt(GLint filter,GLint warp){
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, filter);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, filter);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, warp);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, warp);
-    glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
-} 
+// Shader Utils
 
 GLuint CompileShader(const char* shaderSource, GLenum type) {
     GLuint shader = glCreateShader(type);
@@ -106,4 +100,34 @@ Shader ShaderHotReload(Shader shader){
 
 void DeleteShader(Shader shader) {
     glDeleteProgram(shader.Program);
+}
+
+// OpenGl Utils
+
+void glTexOpt(GLint filter,GLint warp){
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, filter);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, filter);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, warp);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, warp);
+    glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
+} 
+
+GLint GLuint1i(Shader shader, const char* var,float in){
+    glUniform1i(glGetUniformLocation(shader.Program, var), in);
+}
+
+GLint GLuint1f(Shader shader, const char* var,float in){
+    glUniform1f(glGetUniformLocation(shader.Program, var), in);
+}
+
+GLint GLuint2f(Shader shader, const char* var,float in1,float in2){
+    glUniform2f(glGetUniformLocation(shader.Program, var), in1, in2);
+}
+
+GLint GLuint3f(Shader shader, const char* var,float in1,float in2,float in3){
+    glUniform3f(glGetUniformLocation(shader.Program, var), in1, in2, in3);
+}
+
+GLint GLumatrix4fv(Shader shader, const char* var,GLfloat* in){
+    glUniformMatrix4fv(glGetUniformLocation(shader.Program, var), 1, GL_FALSE, in);
 }

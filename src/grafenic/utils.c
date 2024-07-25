@@ -309,8 +309,8 @@ bool IsInside(float x, float y, float rectX, float rectY, float rectWidth, float
 // Ratio resize
 
     int Scaling(int fontsize) {
-        float widthScale = (float)SCREEN_WIDTH / WIDTH;
-        float heightScale = (float)SCREEN_HEIGHT / HEIGHT;
+        float widthScale = (float)window.screen_width / window.width;
+        float heightScale = (float)window.screen_height / window.height;
         float scale = fmin(widthScale, heightScale);
         int scaledFontSize = (int)(fontsize * scale);
         return (fontsize > 0) ? fmax(scaledFontSize, 1) : 0;

@@ -19,23 +19,30 @@ void update(void){
         //}
     // Easing Lerp
         //int sizeball  = Lerp(0, 50,  Easing(Motion(1.0,0.5), "Linear"));
-        //int positionx = Lerp(0, SCREEN_WIDTH,  Easing(Motion(1.0,1.0), "CubicInOut"));
-        //int positiony = Lerp(0, SCREEN_HEIGHT, Easing(Motion(1.0,1.0), "CubicInOut"));
+        //int positionx = Lerp(0, window.screen_width,  Easing(Motion(1.0,1.0), "CubicInOut"));
+        //int positiony = Lerp(0, window.screen_height, Easing(Motion(1.0,1.0), "CubicInOut"));
         //DrawCircle(positionx, positiony, sizeball, VIOLET);
     // DrawLine Examples "Cross Screen"
-        //DrawLine(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, Scaling(5), BLACK);
-        //DrawLine(0, SCREEN_HEIGHT, SCREEN_WIDTH, 0, Scaling(5), BLACK);
+        //DrawLine(0, 0, window.screen_width, window.screen_height, Scaling(5), BLACK);
+        //DrawLine(0, window.screen_height, window.screen_width, 0, Scaling(5), BLACK);
     // DrawTriangle Examples
-        //int x = SCREEN_WIDTH/2;
-        //int y = 0;
+        //int x = window.screen_width / 2;
+        //int y = window.screen_height;
         //static int size = 50;
-        //    if(isKeyDown("+")){
-        //        size += 1;
-        //    }
-        //    if(isKeyDown("-") && size > 0){
-        //        size -= 1;
-        //    }
-        //DrawTriangle(x - size, y, x + size, y, x, y + size, PURPLE);
+        //if (isKeyDown("+")) {
+        //    size += 1;
+        //}
+        //if (isKeyDown("-") && size > 0) {
+        //    size -= 1;
+        //}
+        //DrawTriangle(x - size, y, x + size, y, x, y - size, PURPLE);
+        //Zelda((TriangleObject){
+        //{x - size, y, 0.0f},  // Vert0: x, y, z
+        //{x + size, y, 0.0f},  // Vert1: x, y, z
+        //{x, y - size, 0.0f},  // Vert2: x, y, z
+        //shaderdefault,        // Shader
+        //false                 // Pespective 
+        //});
     // Modular ui.c functions
         // Left Text Bar
             //int texts = 9;
@@ -48,28 +55,6 @@ void update(void){
 
 int main(int arglenght, char** args)
 { 
-    // Built-in "!default"
-      // floating = true;
-      // fullscreen = true;
-      // vsync = true;
-      // cursor = false;
-      // transparent = true;
-      // decorated = true;
-      // visible = false;
-      // fpslimit = 60;
-      // fps = output; 
-      // deltatime = output; 
-      // mouse = {x,y} output; 
-      // mousescroll = {x,y} output;
-      // mousemoving = Bool output; 
-      // mousescrolling = Bool output; 
-      // camera2d.x = float;
-      // camera2d.y = float;
-      // camera2d.z = float;
-      // camera2d.angle = rotation;
-      // debug.input = true;
-      // debug.wireframe = true;
-      // debug.fps = true;
     WindowInit(1920, 1080, "Grafenic");
     font = LoadFont("./res/fonts/Monocraft.ttf");font.nearest = true;
     ClearColor((Color){75, 75, 75,100});
