@@ -47,18 +47,18 @@ void update(void) {
         if (isKeyDown("r")) {
             speed = 0.0f;
             targetZ = 0.0f;
-            mousescroll.y = 0;
-            lastscrolly = mousescroll.y;
+            mouse.scroll.y = 0;
+            lastscrolly = mouse.scroll.y;
             cube.x = Lerp(cube.x, 0.0f, 0.0001f * clampz);
             cube.y = Lerp(cube.y, 0.0f, 0.0001f * clampz);
             cube.z = Lerp(cube.z, 0.0f, 0.0001f * clampz);
         } else {
-            if (lastscrolly != mousescroll.y) {
-                targetZ = cube.z + (mousescroll.y - lastscrolly);
-                mousescroll.y = 0;
+            if (lastscrolly != mouse.scroll.y) {
+                targetZ = cube.z + (mouse.scroll.y - lastscrolly);
+                mouse.scroll.y = 0;
             }
             cube.z = Lerp(cube.z, targetZ, 0.0001f * clampz);
-            lastscrolly = mousescroll.y;
+            lastscrolly = mouse.scroll.y;
         }
     // Rotation Vec3
         Vec3 rot;

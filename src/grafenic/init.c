@@ -12,12 +12,6 @@ typedef struct {
 } Debug;
 
 typedef struct {
-    GLubyte*    buffer;
-    GLuint      buffertexture;
-    bool        pixels;
-} Frame;
-
-typedef struct {
     bool        vsync;
     bool        oldvsync;
     bool        fullscreen;
@@ -45,7 +39,6 @@ typedef struct {
     double      fps;
     int         samples;
     int         depthbits;
-    Frame       frame;
     Options     opt;
 } Window;
 
@@ -80,8 +73,6 @@ void WindowFrames(){
 }
 
 void WindowClear() {
-    if(window.frame.buffer){free(window.frame.buffer);}
-    if(window.frame.pixels){window.frame.buffer = (GLubyte*)calloc(window.screen_width * window.screen_height, 4 * sizeof(GLubyte));}
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     WindowFrames();
 }
@@ -120,7 +111,6 @@ void WindowProcess() {
         }
         window.opt.oldhided = window.opt.hided;
     }
-    if(window.frame.buffer){Framebuffer(0,0,window.screen_width,window.screen_height);}
     glfwSwapBuffers(window.w);
     glfwPollEvents();
 }
@@ -130,7 +120,6 @@ void window_buffersize_callback(GLFWwindow* glfw_window, int width, int height)
     const int MIN_PIXEL = 1;
     window.screen_width = width < MIN_PIXEL ? MIN_PIXEL : width;
     window.screen_height = height < MIN_PIXEL ? MIN_PIXEL : height;
-    //if(!window.frame.pixels){glfwSetWindowAspectRatio(window.w, window.screen_width, window.screen_height);}
     glViewport(0, 0, (GLsizei)window.screen_width, (GLsizei)window.screen_height);
 }
 
@@ -227,10 +216,8 @@ void WindowClose()
     glDeleteVertexArrays(1, &VAO);
     glDeleteBuffers(1, &VBO);
     glDeleteBuffers(1, &EBO);
-    glDeleteBuffers(2, PBO);
     glDeleteProgram(shaderdefault.Program);
     stbi_image_free(img.data);
-    if(window.frame.buffer){free(window.frame.buffer);}
     glfwDestroyWindow(window.w);
     glfwTerminate();
 }
