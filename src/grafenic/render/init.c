@@ -1,5 +1,0 @@
-#include "color.c"
-#include "shader/init.c"
-#include "draw.c"
-#include "image.c"
-#include "text.c"   

@@ -5,22 +5,9 @@
 <pre>
 git clone https://github.com/x3ric/grafenic
 cd grafenic
-./build run
+chmod +x make
+./make run
 </pre>
-
-### Examples
-
-**main** -> ./src/main.c (default when ./build run)
-
-**gamepad** -> ./src/gamepad.c (when ./build run gamepad)
-
-**shader** -> ./src/shader.c (when ./build run shader)
-
-**cursor** -> ./src/cursor.c (when ./build run cursor)
-
-**pong** -> ./src/pong.c (when ./build run pong)
-
-**3d** -> ./src/3d.c (when ./build run 3d)
 
 <details>
 <summary><h3>Variables</h3></summary>
@@ -102,22 +89,6 @@ cd grafenic
 <tr><td><img src="https://via.placeholder.com/50x30/FF00FF"></td><td>MAGENTA (Color){ 255, 0, 255}</td></tr>
 <tr><td></td><td>BLANK (Color){ 0, 0, 0, 0}</td></tr>
 </table>
-</details>
-
-<details>
-<summary><h3>Todo</h3></summary>
-
-
-**Collision Detection**: Implement collision detection for 3D objects.
-
-**3D Model Importer**: Develop functionality to import various 3D model formats.
-
-**Cubemap**: Add support for cubemap textures for environment mapping.
-
-**Lights & Shadows**: Implement dynamic lighting and shadow effects.
-
-**Camera Rotation on 3D Objects**: Enable camera rotation functionality for 3D objects, such as cubes.
-
 </details>
 
 </p><a href="https://archlinux.org"><img alt="Arch Linux" src="https://img.shields.io/badge/Arch_Linux-1793D1?style=for-the-badge&logo=arch-linux&logoColor=D9E0EE&color=000000&labelColor=97A4E2"/></a><br>
