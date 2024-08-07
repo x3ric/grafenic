@@ -108,34 +108,6 @@ TextSize GetTextSize(Font font, float fontSize, const char* text) {
     return size;
 }
 
-void DrawTextPixel(int x, int y, Font font, float fontSize, const char* text, Color color) {
-    if (fontSize <= 1) fontSize = 1;
-    if (color.a == 0) color.a = 255;
-    if (!font.fontBuffer) return;
-    float scale = stbtt_ScaleForPixelHeight(&font.fontInfo, fontSize);
-    int ascent, descent, lineGap;
-    stbtt_GetFontVMetrics(&font.fontInfo, &ascent, &descent, &lineGap);
-    y -= (int)((ascent + descent) * scale);
-    int ch_x = x;
-    for (size_t i = 0; text[i] != '\0'; ++i) {
-        int width, height, xoffset, yoffset;
-        unsigned char* bitmap = stbtt_GetCodepointBitmap(&font.fontInfo, 0, scale, text[i], &width, &height, &xoffset, &yoffset);
-        for (int j = 0; j < height; ++j) {
-            for (int k = 0; k < width; ++k) {
-                int pixel = j * width + k;
-                unsigned char alpha = bitmap[pixel];
-                if (alpha > 0) {
-                    DrawPixel(ch_x + k + xoffset, y - j - yoffset, (Color){color.r, color.g, color.b, color.a / (alpha*3)});
-                }
-            }
-        }
-        int advanceWidth, leftSideBearing;
-        stbtt_GetCodepointHMetrics(&font.fontInfo, text[i], &advanceWidth, &leftSideBearing);
-        ch_x += (int)((advanceWidth + (text[i+1] ? stbtt_GetCodepointKernAdvance(&font.fontInfo, text[i], text[i+1]) : 0)) * scale);
-        stbtt_FreeBitmap(bitmap, NULL);
-    }
-}
-
 void DrawText(int x, int y, Font font, float fontSize, const char* text, Color color) {
     if (fontSize <= 1.0f)
         fontSize = 1.0f;

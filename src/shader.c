@@ -34,15 +34,15 @@ void update(void){
             camera.transform.position.y = Lerp(camera.transform.position.y, 0.0f, 0.0003f * clampz);
             camera.transform.position.z = Lerp(camera.transform.position.z, 1.0f, 0.0003f * clampz);
             camera.transform.rotation.z = Lerp(camera.transform.rotation.z, (GLfloat)0.0f, 0.0003f * clampz);
-            mousescroll.y = 0.0f;
+            mouse.scroll.y = 0.0f;
         } else {
             if (camera.transform.position.z == 0.0f) {
-                camera.transform.position.z = Lerp(1.0f, mousescroll.y * 0.1f, 0.0003f * clampz);
+                camera.transform.position.z = Lerp(1.0f, mouse.scroll.y * 0.1f, 0.0003f * clampz);
             } else {
-                camera.transform.position.z = Lerp(camera.transform.position.z, mousescroll.y * 0.1f + 1.0f , 0.0003f * clampz);
+                camera.transform.position.z = Lerp(camera.transform.position.z, mouse.scroll.y * 0.1f + 1.0f , 0.0003f * clampz);
             }
         }
-        if (mousescroll.y <= 0) {mousescroll.y = 0;}
+        if (mouse.scroll.y <= 0) {mouse.scroll.y = 0;}
         if (isKeyDown("e")) {
            camera.transform.rotation.y -= (speed / 1000.0f) * clampz;
         } else if (isKeyDown("q")) {

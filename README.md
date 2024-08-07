@@ -61,9 +61,9 @@ cd grafenic
 
 **mouse:** Mouse position (x, y) (output)
 
-**mousescroll:** Mouse scroll (x, y) (output)
+**mouse.scroll:** Mouse scroll (x, y) (output)
 
-**mousemoving:** Mouse movement (output)
+**mouse.moving:** Mouse movement (output)
 
 **window.debug.input:** Debug input (true by !default)
 
