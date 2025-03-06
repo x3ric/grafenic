@@ -62,33 +62,35 @@ chmod +x make
 
 <details>
 <summary><h3>Colors</h3></summary>
-<table>
-<tr><td><img src="https://via.placeholder.com/50x30/C8C8C8"></td><td>LIGHTGRAY (Color){ 200, 200, 200}</td></tr>
-<tr><td><img src="https://via.placeholder.com/50x30/828282"></td><td>GRAY (Color){ 130, 130, 130}</td></tr>
-<tr><td><img src="https://via.placeholder.com/50x30/505050"></td><td>DARKGRAY (Color){ 80, 80, 80}</td></tr>
-<tr><td><img src="https://via.placeholder.com/50x30/FDF900"></td><td>YELLOW (Color){ 253, 249, 0}</td></tr>
-<tr><td><img src="https://via.placeholder.com/50x30/FFCB00"></td><td>GOLD (Color){ 255, 203, 0}</td></tr>
-<tr><td><img src="https://via.placeholder.com/50x30/FFA100"></td><td>ORANGE (Color){ 255, 161, 0}</td></tr>
-<tr><td><img src="https://via.placeholder.com/50x30/FF6DC2"></td><td>PINK (Color){ 255, 109, 194}</td></tr>
-<tr><td><img src="https://via.placeholder.com/50x30/E62937"></td><td>RED (Color){ 230, 41, 55}</td></tr>
-<tr><td><img src="https://via.placeholder.com/50x30/BE2137"></td><td>MAROON (Color){ 190, 33, 55}</td></tr>
-<tr><td><img src="https://via.placeholder.com/50x30/00E430"></td><td>GREEN (Color){ 0, 228, 48}</td></tr>
-<tr><td><img src="https://via.placeholder.com/50x30/009E2F"></td><td>LIME (Color){ 0, 158, 47}</td></tr>
-<tr><td><img src="https://via.placeholder.com/50x30/00752C"></td><td>DARKGREEN (Color){ 0, 117, 44}</td></tr>
-<tr><td><img src="https://via.placeholder.com/50x30/66BFFF"></td><td>SKYBLUE (Color){ 102, 191, 255}</td></tr>
-<tr><td><img src="https://via.placeholder.com/50x30/0079F1"></td><td>BLUE (Color){ 0, 121, 241}</td></tr>
-<tr><td><img src="https://via.placeholder.com/50x30/0052AC"></td><td>DARKBLUE (Color){ 0, 82, 172}</td></tr>
-<tr><td><img src="https://via.placeholder.com/50x30/C87AFF"></td><td>PURPLE (Color){ 200, 122, 255}</td></tr>
-<tr><td><img src="https://via.placeholder.com/50x30/873CBE"></td><td>VIOLET (Color){ 135, 60, 190}</td></tr>
-<tr><td><img src="https://via.placeholder.com/50x30/701F7E"></td><td>DARKPURPLE (Color){ 112, 31, 126}</td></tr>
-<tr><td><img src="https://via.placeholder.com/50x30/D3B083"></td><td>BEIGE (Color){ 211, 176, 131}</td></tr>
-<tr><td><img src="https://via.placeholder.com/50x30/7F6A4F"></td><td>BROWN (Color){ 127, 106, 79}</td></tr>
-<tr><td><img src="https://via.placeholder.com/50x30/4C3F2F"></td><td>DARKBROWN (Color){ 76, 63, 47}</td></tr>
-<tr><td><img src="https://via.placeholder.com/50x30/FFFFFF"></td><td>WHITE (Color){ 255, 255, 255}</td></tr>
-<tr><td><img src="https://via.placeholder.com/50x30/000000"></td><td>BLACK (Color){ 0, 0, 0}</td></tr>
-<tr><td><img src="https://via.placeholder.com/50x30/FF00FF"></td><td>MAGENTA (Color){ 255, 0, 255}</td></tr>
-<tr><td></td><td>BLANK (Color){ 0, 0, 0, 0}</td></tr>
-</table>
+
+| Color | RGB |
+|---|---|
+| ![LIGHTGRAY](https://img.shields.io/badge/LIGHTGRAY-CCCCCC?style=flat-square&logoColor=FFFFFF) | `(200, 200, 200)` |
+| ![GRAY](https://img.shields.io/badge/GRAY-828282?style=flat-square&logoColor=FFFFFF) | `(130, 130, 130)` |
+| ![DARKGRAY](https://img.shields.io/badge/DARKGRAY-505050?style=flat-square&logoColor=FFFFFF) | `(80, 80, 80)` |
+| ![YELLOW](https://img.shields.io/badge/YELLOW-FDF900?style=flat-square&logoColor=FFFFFF) | `(253, 249, 0)` |
+| ![GOLD](https://img.shields.io/badge/GOLD-FFCB00?style=flat-square&logoColor=FFFFFF) | `(255, 203, 0)` |
+| ![ORANGE](https://img.shields.io/badge/ORANGE-FFA100?style=flat-square&logoColor=FFFFFF) | `(255, 161, 0)` |
+| ![PINK](https://img.shields.io/badge/PINK-FF6DC2?style=flat-square&logoColor=FFFFFF) | `(255, 109, 194)` |
+| ![RED](https://img.shields.io/badge/RED-E62937?style=flat-square&logoColor=FFFFFF) | `(230, 41, 55)` |
+| ![MAROON](https://img.shields.io/badge/MAROON-BE2137?style=flat-square&logoColor=FFFFFF) | `(190, 33, 55)` |
+| ![GREEN](https://img.shields.io/badge/GREEN-00E430?style=flat-square&logoColor=FFFFFF) | `(0, 228, 48)` |
+| ![LIME](https://img.shields.io/badge/LIME-009E2F?style=flat-square&logoColor=FFFFFF) | `(0, 158, 47)` |
+| ![DARKGREEN](https://img.shields.io/badge/DARKGREEN-00752C?style=flat-square&logoColor=FFFFFF) | `(0, 117, 44)` |
+| ![SKYBLUE](https://img.shields.io/badge/SKYBLUE-66BFFF?style=flat-square&logoColor=FFFFFF) | `(102, 191, 255)` |
+| ![BLUE](https://img.shields.io/badge/BLUE-0079F1?style=flat-square&logoColor=FFFFFF) | `(0, 121, 241)` |
+| ![DARKBLUE](https://img.shields.io/badge/DARKBLUE-0052AC?style=flat-square&logoColor=FFFFFF) | `(0, 82, 172)` |
+| ![PURPLE](https://img.shields.io/badge/PURPLE-C87AFF?style=flat-square&logoColor=FFFFFF) | `(200, 122, 255)` |
+| ![VIOLET](https://img.shields.io/badge/VIOLET-873CBE?style=flat-square&logoColor=FFFFFF) | `(135, 60, 190)` |
+| ![DARKPURPLE](https://img.shields.io/badge/DARKPURPLE-701F7E?style=flat-square&logoColor=FFFFFF) | `(112, 31, 126)` |
+| ![BEIGE](https://img.shields.io/badge/BEIGE-D3B083?style=flat-square&logoColor=FFFFFF) | `(211, 176, 131)` |
+| ![BROWN](https://img.shields.io/badge/BROWN-7F6A4F?style=flat-square&logoColor=FFFFFF) | `(127, 106, 79)` |
+| ![DARKBROWN](https://img.shields.io/badge/DARKBROWN-4C3F2F?style=flat-square&logoColor=FFFFFF) | `(76, 63, 47)` |
+| ![WHITE](https://img.shields.io/badge/WHITE-FFFFFF?style=flat-square&logoColor=000000) | `(255, 255, 255)` |
+| ![BLACK](https://img.shields.io/badge/BLACK-000000?style=flat-square&logoColor=FFFFFF) | `(0, 0, 0)` |
+| ![MAGENTA](https://img.shields.io/badge/MAGENTA-FF00FF?style=flat-square&logoColor=FFFFFF) | `(255, 0, 255)` |
+| ![BLANK](https://img.shields.io/badge/BLANK-000000?style=flat-square&logoColor=000000) | `(0, 0, 0, 0)` |
+
 </details>
 
 </p><a href="https://archlinux.org"><img alt="Arch Linux" src="https://img.shields.io/badge/Arch_Linux-1793D1?style=for-the-badge&logo=arch-linux&logoColor=D9E0EE&color=000000&labelColor=97A4E2"/></a><br>

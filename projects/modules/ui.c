@@ -30,9 +30,7 @@ void DrawPopUp(const char* title, Font font, int fontsize, int width, int height
 }
 
 void Fps(int x, int y, Font font, int size) {
-    static double lastTime = 0.0;
     static char fpsText[16];
-    double currentTime = window.time;
     snprintf(fpsText, sizeof(fpsText), "FPS: %.0f", window.fps);
     DrawText(x, y, font, size, fpsText, WHITE);
 }

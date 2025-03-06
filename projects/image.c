@@ -1,4 +1,4 @@
-#include "../window.h"
+#include "../src/window.h"
 #include "modules/ui.c"
 
 Font font;

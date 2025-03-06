@@ -1,7 +1,8 @@
 #!/bin/bash -i
 
-CC="clang -w"
-CFLAGS="-I./deps -I./src $(pkg-config --cflags freetype2)"
+CC="clang -w -g -Wextra"
+FREETYPE="$(pkg-config --cflags freetype2)"
+CFLAGS="-I./deps -I./src $FREETYPE"
 LDFLAGS="-lglfw -lGL -lGLEW -lm -lfreetype"
 TARGET="grafenic"
 
@@ -46,8 +47,7 @@ uninstall() {
 }
 
 fzf-splitted () {
-    if [[ -n "$TMUX" ]]
-    then
+    if [[ -n "$TMUX" ]]; then
         fzf --color=16 --reverse --ansi "$@"
     else
         fzf-tmux --color=16 -x --height ${FZF_TMUX_HEIGHT:-40%} --reverse --cycle --ansi "$@"
@@ -55,7 +55,7 @@ fzf-splitted () {
 }
 
 compile-library() {
-    echo -e "$CC $CFLAGS -fPIC -c src/window.c -o ./build/window.o"
+    echo -e "$CC $CFLAGS -fPIC -c src/window.c -o ./build/window.o -O3"
     $CC $CFLAGS -fPIC -c src/window.c -o ./build/window.o
     echo -e "$CC $CFLAGS -shared -o ./build/libgrafenic.so ./build/window.o $LDFLAGS"
     $CC $CFLAGS -shared -o ./build/libgrafenic.so ./build/window.o $LDFLAGS
@@ -63,22 +63,18 @@ compile-library() {
 
 build() {
     clean
-    uninstall
-    
+    #uninstall # Useful when writing the library
     if [ -z "$1" ]; then
-        SOURCES="./src/examples/$(ls ./src/examples | grep -v '^modules$' | sed 's/\.c$//' | fzf-splitted).c"
+        SOURCES="./projects/$(ls ./projects | grep -v '^modules$' | sed 's/\.c$//' | fzf-splitted).c"
     else
-        SOURCES="./src/examples/$1.c"
+        SOURCES="./projects/$1.c"
     fi
-
     mkdir -p ./build/
-
-    compile-library
-    
     if [ ! -f "/usr/local/lib/libgrafenic.so" ]; then
+        compile-library
         install
     fi
-
+    CFLAGS="-I./deps -I./projects -I./src $FREETYPE"
     export LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
     echo -e "$CC $CFLAGS $SOURCES -o $TARGET -lgrafenic $LDFLAGS"
     $CC $CFLAGS $SOURCES -o $TARGET -lgrafenic $LDFLAGS
@@ -86,18 +82,21 @@ build() {
 
 run() {
     build $1
-    ./"$TARGET"
+    echo "./$TARGET $2"
+    "./$TARGET" $2
 }
 
 debug() {
-    CC="clang -w -g"
     build $1
     gdb -q $TARGET --eval-command=run
 }
 
 case $1 in
     run)
-        run $2
+        run $2 ${@:3}
+        ;;
+    build)
+        build $2
         ;;
     debug)
         debug $2
@@ -112,7 +111,7 @@ case $1 in
         uninstall
         ;;
     *)
-        echo "Usage: $0 {install|uninstall|run|debug|clean}"
+        echo "Usage: $0 {install|uninstall|build|run|debug|clean}"
         exit 1
         ;;
 esac

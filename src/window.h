@@ -454,9 +454,6 @@ extern Window window;
     #include FT_OUTLINE_H
     #include FT_BITMAP_H
 
-    #define STB_TRUETYPE_IMPLEMENTATION
-    #include <stb_truetype.h>
-
     typedef struct {
         float x0, y0, x1, y1;  // Coordinates of the glyph in the atlas (in pixels)
         float xoff, yoff;      // Left/top offsets
@@ -497,7 +494,6 @@ extern Window window;
     TextSize GetTextSize(Font font, float fontSize, const char* text);
     void RenderShaderText(ShaderObject obj, Color color, float fontSize);
     void DrawText(int x, int y, Font font, float fontSize, const char* text, Color color);
-    void DrawTextEditor(int x, int y, Font font, float fontSize, const char* text, Color color, int cursorStart, int cursorEnd, Shader shaderfont, Shader shaderfontcursor);
     void FreeFontCache();
 // END
 

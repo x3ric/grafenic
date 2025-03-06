@@ -1,4 +1,4 @@
-#include "../window.h"
+#include "../src/window.h"
 #include "modules/ui.c"
 
 Font font;
@@ -37,7 +37,7 @@ void Draw2DAxes(int x, int y, int jid, int width, int height) {
         DrawCircle(visualX, visualY, indicatorCircleRadius, pointerColor);
         DrawCircleBorder(visualX, visualY, indicatorCircleRadius, Scaling(3), (Color){255,255,255,120});
         char buffer[256];
-        snprintf(buffer, sizeof(buffer), "X: %.2f Y: %.2f", xValue, yValue);
+        snprintf(buffer, sizeof(buffer), "X:%.2fY:%.2f", xValue, yValue);
         TextSize labelSize = GetTextSize(font, Scaling(20), buffer);
         int textX = groupX + (width - labelSize.width) / 2;
         int textY = groupY + height + labelSpacing;
@@ -87,23 +87,23 @@ void DrawGamepadInfo(int x, int y, int jid) {
     TextSize statusSize = GetTextSize(font, Scaling(24), buffer);
     int statusX = x + labelSize.width + Scaling(20);
     DrawText(statusX, y, font, Scaling(24), buffer, GREEN);
-    y += Scaling(15);
+    y += Scaling(25);
     // Draw Input
     DrawTriggers(x + Scaling(275), y, jid, Scaling(25), Scaling(75));
-    Draw2DAxes(x + Scaling(249), y + Scaling(215), jid, Scaling(150), Scaling(150));
+    Draw2DAxes(x + Scaling(249), y + Scaling(125), jid, Scaling(150), Scaling(150));
     // Buttons information
-    DrawText(x, y, font, Scaling(22), "  Buttons:", WHITE);
-    y += Scaling(25);
+    y += Scaling(5);
     static const char* buttonNames[] = {
-        "GamepadA", "GamepadB", "GamepadX", "GamepadY", "LeftBumper", "RightBumper", "Back", "Start",
-        "Guide", "LeftThumb", "RightThumb", "DpadUp", "DpadRight",
-        "DpadDown", "DpadLeft", "Cross", "Circle", "Square", "Triangle"
+        //"GamepadA", "GamepadB", "GamepadX", "GamepadY", // XBOX
+        "Cross",    "Circle",   "Square",   "Triangle"    // PLAYSTATION
+        "LeftBumper", "RightBumper", "LeftThumb", "RightThumb", 
+        "DpadLeft",   "DpadRight",   "DpadUp",    "DpadDown", 
+        "Back", "Start", "Guide"
     };
-    x += Scaling(30);
+    x += Scaling(5);
     for (int b = 0; b < sizeof(buttonNames) / sizeof(buttonNames[0]); b++) {
-        snprintf(buffer, sizeof(buffer), "%s: %s", buttonNames[b], IsGamepadButtonDown(jid, buttonNames[b]) ? "Pressed" : "Released");
-        
-        DrawText(x, y, font, Scaling(20), buffer, WHITE);
+        snprintf(buffer, sizeof(buffer), "%s", buttonNames[b]);
+        DrawText(x, y, font, Scaling(22), buffer, IsGamepadButtonDown(jid, buttonNames[b]) ? GREEN : WHITE);
         y += Scaling(20);
     }
     // Extra spacing between gamepads
