@@ -29,7 +29,7 @@ typedef struct {
     Glyph glyphs[MAX_GLYPHS];  // Glyph data for ASCII characters 32-127
     float fontSize;            // Font size for which glyphs were generated
     bool nearest;              // Nearest filter
-    bool subpixel;              // Subpixel
+    bool subpixel;             // Subpixel
 } Font;
 
 #define ATLAS_FONT_SIZE 128.0
@@ -353,7 +353,7 @@ void DrawText(int x, int y, Font font, float fontSize, const char* text, Color c
             x_start,     y_start,     0.0f, glyph->u0, glyph->v0
         };
         GLuint indices[] = {0, 1, 2, 2, 3, 0};
-        RenderShaderText((ShaderObject){camera, shaderfont, vertices, indices, sizeof(vertices), sizeof(indices)}, color, fontSize);
+        RenderShaderText((ShaderObject){camera, shaderfont, vertices, indices, sizeof(vertices), sizeof(indices), camera.transform}, color, fontSize);
         xpos += glyph->xadvance * scale;
     }
     glBindTexture(GL_TEXTURE_2D, 0);
@@ -405,9 +405,9 @@ void DrawTextEditor(int x, int y, Font font, float fontSize, const char* text, C
         GLuint indices[] = {0, 1, 2, 2, 3, 0};
         bool isSelected = (i >= cursorStart && i <= cursorEnd);
         if (isSelected) {
-            RenderShaderText((ShaderObject){camera, shaderfontcursor, vertices, indices, sizeof(vertices), sizeof(indices)}, color, fontSize);
+            RenderShaderText((ShaderObject){camera, shaderfontcursor, vertices, indices, sizeof(vertices), sizeof(indices), camera.transform}, color, fontSize);
         } else {
-            RenderShaderText((ShaderObject){camera, shaderfont, vertices, indices, sizeof(vertices), sizeof(indices)}, color, fontSize);
+            RenderShaderText((ShaderObject){camera, shaderfont, vertices, indices, sizeof(vertices), sizeof(indices), camera.transform}, color, fontSize);
         }
         xpos += glyph->xadvance * scale;
     }

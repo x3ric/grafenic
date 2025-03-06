@@ -1,6 +1,6 @@
 #!/bin/bash -i
 
-CC="clang -w"
+CC="clang -w -g -Wextra"
 CFLAGS="-I./deps -I./src $(pkg-config --cflags freetype2)"
 LDFLAGS="-lglfw -lGL -lGLEW -lm -lfreetype"
 TARGET="grafenic"
@@ -90,7 +90,6 @@ run() {
 }
 
 debug() {
-    CC="clang -w -g"
     build $1
     gdb -q $TARGET --eval-command=run
 }
@@ -98,6 +97,9 @@ debug() {
 case $1 in
     run)
         run $2
+        ;;
+    build)
+        build $2
         ;;
     debug)
         debug $2
@@ -112,7 +114,7 @@ case $1 in
         uninstall
         ;;
     *)
-        echo "Usage: $0 {install|uninstall|run|debug|clean}"
+        echo "Usage: $0 {install|uninstall|build|run|debug|clean}"
         exit 1
         ;;
 esac
