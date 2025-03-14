@@ -12,12 +12,10 @@ typedef struct {
     float near;
 } Camera;
 
-Camera camera = {
-    {
+Camera camera = {{
     0.0f, 0.0f, 0.0f,   // Position: x, y, z
     0.0f, 0.0f, 0.0f,   // LocalPosition: x, y, z
-    0.0f, 0.0f, 0.0f,   // Rotation: x, y, z
-    },
+    0.0f, 0.0f, 0.0f},  // Rotation: x, y, z
     0.0f,               // Fov
     0.0f,               // Near Distance
     0.0f                // Far Distance

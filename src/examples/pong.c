@@ -65,11 +65,11 @@ int main(int argc, char** argv) {
             }
         // Check if the ball is out of bounds
             if (ball.x < 0) {
-                rightScore++; // Increment adversary's score
+                rightScore++;
                 ResetBall();
             } 
             if (ball.x > window.screen_width - ball.size) {
-                leftScore++; // Increment player's score
+                leftScore++;
                 ResetBall();
             }
         // Draw ball
