@@ -8,17 +8,16 @@ typedef struct { float targetY, currentY, velocity; bool smoothScroll; } ScrollS
 Font font;
 Shader shaderfontcursor;
 Line lines[1024] = {0};
-int numLines = 1, cursorLine = 0, cursorCol = 0, lineHeight, gutterWidth = 50;
+int numLines = 1, cursorLine = 0, cursorCol = 0, lineHeight, gutterWidth = 0;
 ScrollState scroll = {0, 0, 0, true};
 static double lastKeyTime[GLFW_KEY_LAST + 1] = {0};
 static bool keyStates[GLFW_KEY_LAST + 1] = {false};
-double fontSize = 40.0f;
-bool showLineNumbers = true, showStatusBar = true, showScrollbar = true, isFileDirty = false;
-bool isSelecting = false, isScrollbarDragging = false;
+double fontSize = 24.0f;
+bool showLineNumbers = true, showStatusBar = true, showScrollbar = true, isFileDirty = false, isSelecting = false, isScrollbarDragging = false, insertMode = true;;
 int selStartLine = -1, selStartCol = -1, selEndLine = -1, selEndCol = -1;
 int statusBarHeight = 25, scrollbarWidth = 12;
 char filename[256] = "Untitled.txt", statusMsg[256] = "";
-Color bgColor = {30,30,30,255}, textColor = {220,220,220,255}, gutterColor = {40,40,40,255}, lineNumColor = {150,150,150,255}, statusBarColor = {50,50,70,255}, statusTextColor = {200,200,200,255}, scrollbarColor = {60,60,60,255}, scrollThumbColor = {120,120,140,200}, curLineHighlight = {50,50,50,100};
+Color bgColor = {0,0,0,255}, textColor = {220,220,220,255}, lineNumColor = {150,150,150,255}, curLineHighlight = {7,7,7,100};
 
 void InitLine(int idx) {
     if (idx >= 1024) return;
@@ -93,15 +92,12 @@ int MaxScroll() {
 
 void UpdateScroll(double dt) {
     if (scroll.smoothScroll) {
-        float diff = scroll.targetY - scroll.currentY;
-        if (fabs(diff) > 0.5f) {
-            scroll.velocity = scroll.velocity * 0.7f + diff * 9.0f * dt;
-            scroll.currentY += scroll.velocity * dt;
-        } else {
-            scroll.currentY = scroll.targetY;
-            scroll.velocity = 0;
-        }
-    } else scroll.currentY = scroll.targetY;
+        float smoothingFactor = 10.0f;
+        float t = 1 - exp(-smoothingFactor * dt);
+        scroll.currentY = scroll.currentY + (scroll.targetY - scroll.currentY) * t;
+    } else {
+        scroll.currentY = scroll.targetY;
+    }
 }
 
 void AdjustScrollToCursor() {
@@ -239,8 +235,22 @@ void ScrollCallback(GLFWwindow* win, double x, double y) {
 }
 
 void CharCallback(GLFWwindow* win, unsigned int c) {
-    if (isprint(c)) InsertChar((char)c);
-    snprintf(statusMsg, sizeof(statusMsg), "Line: %d Col: %d Lines: %d | %s%s", cursorLine+1, cursorCol+1, numLines, filename, isFileDirty ? " *" : "");
+    if (isprint(c)) {
+        if (insertMode) {
+            InsertChar((char)c);
+        } else {
+            if (cursorCol < lines[cursorLine].length) {
+                lines[cursorLine].text[cursorCol] = (char)c;
+                cursorCol++;
+                isFileDirty = true;
+            } else {
+                InsertChar((char)c);
+            }
+        }
+    }
+    snprintf(statusMsg, sizeof(statusMsg), "Line: %d Col: %d Lines: %d | %s%s | Mode: %s", 
+             cursorLine+1, cursorCol+1, numLines, filename, isFileDirty ? " *" : "",
+             insertMode ? "Insert" : "Overwrite");
 }
 
 void HandleKey(int key, double time) {
@@ -284,6 +294,23 @@ void KeyCallback(GLFWwindow* win, int key, int scan, int action, int mods) {
         }
         HandleKey(key, time);
         switch (key) {
+            case GLFW_KEY_INSERT:
+                insertMode = !insertMode;
+                snprintf(statusMsg, sizeof(statusMsg), "Mode: %s", 
+                         insertMode ? "Insert" : "Overwrite");
+                break;
+            case GLFW_KEY_A:
+                if (ctrl) {
+                    selStartLine = 0;
+                    selStartCol = 0;
+                    selEndLine = numLines - 1;
+                    selEndCol = lines[numLines - 1].length;
+                    cursorLine = selEndLine;
+                    cursorCol = selEndCol;
+                    isSelecting = true;
+                    snprintf(statusMsg, sizeof(statusMsg), "Selected all text");
+                }
+                break;
             case GLFW_KEY_BACKSPACE:
                 if (ctrl && isSelecting) DeleteSelection();
                 else DeleteChar();
@@ -319,8 +346,8 @@ void KeyCallback(GLFWwindow* win, int key, int scan, int action, int mods) {
                     cursorCol = fmin(cursorCol, lines[cursorLine].length);
                 }
                 break;
-            case 47: if (ctrl && fontSize >= 50.0f) fontSize -= 8.5f; break;
-            case 93: if (ctrl && fontSize <= Scaling(175.0)) fontSize += 8.5f; break;
+            case 47: if (ctrl && fontSize >= 24.0f) fontSize -= (lineHeight * 0.15f); break;
+            case 93: if (ctrl && fontSize <= 150.0) fontSize += (lineHeight * 0.15f); break;
             case GLFW_KEY_HOME:
                 if (ctrl) {
                     cursorLine = cursorCol = 0;
@@ -369,8 +396,11 @@ void KeyCallback(GLFWwindow* win, int key, int scan, int action, int mods) {
         }
         if (isSelecting) { selEndLine = cursorLine; selEndCol = cursorCol; }
         AdjustScrollToCursor();
-        snprintf(statusMsg, sizeof(statusMsg), "Line: %d Col: %d Lines: %d | %s%s", 
-                 cursorLine+1, cursorCol+1, numLines, filename, isFileDirty ? " *" : "");
+        if (key != GLFW_KEY_INSERT) {
+            snprintf(statusMsg, sizeof(statusMsg), "Line: %d Col: %d Lines: %d | %s%s | Mode: %s", 
+                    cursorLine+1, cursorCol+1, numLines, filename, isFileDirty ? " *" : "",
+                    insertMode ? "Insert" : "Overwrite");
+        }
     } else if (action == GLFW_RELEASE) {
         keyStates[key] = false;
         if (key == GLFW_KEY_LEFT_CONTROL || key == GLFW_KEY_RIGHT_CONTROL)
@@ -379,27 +409,66 @@ void KeyCallback(GLFWwindow* win, int key, int scan, int action, int mods) {
 }
 
 void MouseCallback(GLFWwindow* win, int button, int action, int mods) {
+    static double lastClickTime = 0;
+    static int clickCount = 0;
     double x, y;
     glfwGetCursorPos(win, &x, &y);
     if (button == GLFW_MOUSE_BUTTON_LEFT) {
         if (action == GLFW_PRESS) {
+            double currentTime = glfwGetTime();
+            if (currentTime - lastClickTime < 0.4) {
+                clickCount++;
+            } else {
+                clickCount = 1;
+            }
+            lastClickTime = currentTime;
             if (IsInScrollbar(x, y)) {
                 isScrollbarDragging = true;
                 HandleScrollDrag(y);
-            } else {
-                UpdateCursor(x, y);
-                selStartLine = selEndLine = cursorLine;
-                selStartCol = selEndCol = cursorCol;
+                return;
+            }
+            UpdateCursor(x, y);
+            if (clickCount == 1) {
+                selStartLine = cursorLine;
+                selStartCol = cursorCol;
+                selEndLine = cursorLine;
+                selEndCol = cursorCol;
                 isSelecting = true;
+            } else if (clickCount == 2) {
+                int lineLen = lines[cursorLine].length;
+                const char* lineText = lines[cursorLine].text;
+                int wordStart = cursorCol;
+                while (wordStart > 0 && 
+                       (isalnum(lineText[wordStart-1]) || lineText[wordStart-1] == '_')) {
+                    wordStart--;
+                }
+                int wordEnd = cursorCol;
+                while (wordEnd < lineLen && 
+                       (isalnum(lineText[wordEnd]) || lineText[wordEnd] == '_')) {
+                    wordEnd++;
+                }
+                selStartLine = cursorLine;
+                selStartCol = wordStart;
+                selEndLine = cursorLine;
+                selEndCol = wordEnd;
+                cursorCol = wordEnd;
+                isSelecting = true;
+            } else if (clickCount >= 3) {
+                selStartLine = cursorLine;
+                selStartCol = 0;
+                selEndLine = cursorLine;
+                selEndCol = lines[cursorLine].length;
+                cursorCol = selEndCol;
+                isSelecting = true;
+                clickCount = 0;
             }
         } else if (action == GLFW_RELEASE) {
             isScrollbarDragging = false;
-            if (!IsInScrollbar(x, y) && 
-                selStartLine == selEndLine && selStartCol == selEndCol) {
+            if (selStartLine == selEndLine && selStartCol == selEndCol) {
                 selStartLine = selEndLine = -1;
                 selStartCol = selEndCol = -1;
+                isSelecting = false;
             }
-            isSelecting = false;
         }
     }
 }
@@ -409,14 +478,19 @@ void CursorPosCallback(GLFWwindow* win, double x, double y) {
         HandleScrollDrag(y);
         return;
     }
-    if (isSelecting && glfwGetMouseButton(win, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS) {
+    if (glfwGetMouseButton(win, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS && isSelecting) {
         if (IsInScrollbar(x, y)) return;
+        int oldCursorLine = cursorLine;
+        int oldCursorCol = cursorCol;
         UpdateCursor(x, y);
         selEndLine = cursorLine;
         selEndCol = cursorCol;
         int edge = lineHeight * 2;
-        if (y < edge)
+        if (y < edge) {
             scroll.targetY = fmax(0, scroll.targetY - lineHeight);
+        } else if (y > window.screen_height - edge) {
+            scroll.targetY = fmin(MaxScroll(), scroll.targetY + lineHeight);
+        }
     }
 }
 
@@ -450,34 +524,45 @@ void DrawScrollbar() {
     float scrollRatio = scroll.currentY / (float)fmax(1, MaxScroll());
     scrollRatio = fmin(1.0f, fmax(0.0f, scrollRatio));
     int thumbY = scrollRatio * (sbHeight - thumbHeight);
-    DrawRect(sbX, thumbY, scrollbarWidth, thumbHeight, scrollThumbColor);
+    DrawRect(sbX, thumbY, scrollbarWidth, thumbHeight, (Color){5,5,5,100});
 }
 
 void DrawEditor() {
     lineHeight = GetTextSize(font, fontSize, "gj|").height;
     DrawLineNumbers();
     int textX = showLineNumbers ? gutterWidth : 0;
+    gutterWidth = 1.25f * fontSize;
     int startLine = scroll.currentY / lineHeight;
     int endLine = fmin(numLines, startLine + window.screen_height / lineHeight + 1);
+    int normStartLine = selStartLine;
+    int normStartCol = selStartCol;
+    int normEndLine = selEndLine;
+    int normEndCol = selEndCol;
+    if (IsSelValid() && (normStartLine > normEndLine ||
+        (normStartLine == normEndLine && normStartCol > normEndCol))) {
+        int tempLine = normStartLine;
+        int tempCol = normStartCol;
+        normStartLine = normEndLine;
+        normStartCol = normEndCol;
+        normEndLine = tempLine;
+        normEndCol = tempCol;
+    }
+    bool isCursorVisible = false;
+    double currentTime = glfwGetTime();
+    if (fmod(currentTime, 1.0) < 0.5) {
+        isCursorVisible = true;
+    }
     for (int i = startLine; i < endLine; i++) {
         int lineY = (i * lineHeight) - scroll.currentY;
         if (i == cursorLine) {
             DrawRect(0, lineY, window.screen_width, lineHeight, curLineHighlight);
         }
-        int selStartCol = -1, selEndCol = -1;
-        if (IsSelValid() && 
-            ((i >= selStartLine && i <= selEndLine) || 
-             (i >= selEndLine && i <= selStartLine))) {
-            selStartCol = (i == selStartLine) ? selStartCol : 0;
-            selEndCol = (i == selEndLine) ? selEndCol : lines[i].length;
-            if (selStartLine > selEndLine || 
-                (selStartLine == selEndLine && selStartCol > selEndCol)) {
-                int tempLine = selStartLine, tempCol = selStartCol;
-                selStartLine = selEndLine;
-                selStartCol = selEndCol;
-                selEndLine = tempLine;
-                selEndCol = tempCol;
-            }
+        bool hasSelection = IsSelValid() &&
+            i >= normStartLine && i <= normEndLine;
+        int selStart = -1, selEnd = -1;
+        if (hasSelection) {
+            selStart = (i == normStartLine) ? normStartCol : 0;
+            selEnd = (i == normEndLine) ? normEndCol : lines[i].length;
         }
         char* lineText = lines[i].text;
         int lineLen = lines[i].length;
@@ -485,37 +570,77 @@ void DrawEditor() {
         for (int j = 0; j < lineLen; j++) {
             char charStr[2] = {lineText[j], '\0'};
             TextSize charSize = GetTextSize(font, fontSize, charStr);
-            if (IsSelValid() && 
-                i >= selStartLine && i <= selEndLine && 
-                j >= selStartCol && j < selEndCol) {
+            if (hasSelection && j >= selStart && j < selEnd) {
                 DrawRect(currentX, lineY, charSize.width, lineHeight, (Color){100, 100, 200, 100});
             }
-            DrawText(currentX, lineY, font, fontSize, charStr, textColor);
             currentX += charSize.width;
         }
-        if (i == cursorLine) {
+        if (hasSelection && lineLen <= selEnd && i != normEndLine) {
+            TextSize spaceSize = GetTextSize(font, fontSize, " ");
+            DrawRect(currentX, lineY, spaceSize.width, lineHeight, (Color){100, 100, 200, 100});
+        }
+        if (i == cursorLine && isCursorVisible) {
             float cursorX = textX;
+            float cursorWidth;
             for (int j = 0; j < cursorCol; j++) {
                 char charStr[2] = {lines[i].text[j], '\0'};
                 TextSize charSize = GetTextSize(font, fontSize, charStr);
                 cursorX += charSize.width;
             }
-            static double lastBlinkTime = 0;
-            double currentTime = glfwGetTime();
-            if (fmod(currentTime, 1.0) < 0.5) {
-                DrawRect(cursorX, lineY, (textX * fontSize) / 80, lineHeight, textColor); // cursor as a block
-                //DrawRect(cursorX, lineY, 2, lineHeight, textColor); // useful in not monospaced fonts or in  ins mode
+            if (cursorCol < lineLen) {
+                char cursorCharStr[2] = {lines[i].text[cursorCol], '\0'};
+                TextSize cursorCharSize = GetTextSize(font, fontSize, cursorCharStr);
+                if (!insertMode) {
+                    cursorWidth = cursorCharSize.width / 8;
+                } else {
+                    cursorWidth = cursorCharSize.width;
+                }
+            } else {
+                TextSize spaceSize = GetTextSize(font, fontSize, " ");
+                if (!insertMode) {
+                    cursorWidth = spaceSize.width / 8;
+                } else {
+                    cursorWidth = spaceSize.width / 2;
+                }
             }
+            DrawRect(cursorX, lineY, cursorWidth, lineHeight, textColor);
+        }
+    }
+    for (int i = startLine; i < endLine; i++) {
+        int lineY = (i * lineHeight) - scroll.currentY;
+        char* lineText = lines[i].text;
+        int lineLen = lines[i].length;
+        float currentX = textX;
+        for (int j = 0; j < lineLen; j++) {
+            char charStr[2] = {lineText[j], '\0'};
+            TextSize charSize = GetTextSize(font, fontSize, charStr);
+            Color charColor = textColor;
+            if (i == cursorLine && j == cursorCol && isCursorVisible && insertMode) {
+                charColor = bgColor;
+            }
+            DrawText(currentX, lineY, font, fontSize, charStr, charColor);
+            currentX += charSize.width;
         }
     }
     DrawScrollbar();
 }
 
-int main() {
+int main(int argc, char *argv[]) {
     WindowInit(1920, 1080, "Text Editor");
     font = LoadFont("./res/fonts/Monocraft.ttf");//font.nearest = false;
     //shaderdefault.hotreloading = true;shaderfont.hotreloading = true;
-    InitLine(0);
+    if (argc > 1) {
+        if(argv[1][0] == '-') {
+            if (argv[1][1] == 'h') {
+                printf("Usage: %s [filename]\n", argv[0]);
+                return 0;
+            }
+        }
+        strcpy(filename, argv[1]);
+        LoadFile(filename);
+    } else {
+        InitLine(0);
+    }
     glfwSetCharCallback(window.w, CharCallback);
     glfwSetKeyCallback(window.w, KeyCallback);
     glfwSetScrollCallback(window.w, ScrollCallback);
@@ -523,7 +648,7 @@ int main() {
     glfwSetCursorPosCallback(window.w, CursorPosCallback);
     while (!WindowState()) {
         WindowClear();
-        UpdateScroll(window.deltatime * 10.0f);
+        UpdateScroll(window.deltatime * 5.0f);
         DrawEditor();
         ExitPromt(font);
         WindowProcess();
@@ -532,3 +657,34 @@ int main() {
     WindowClose();
     return 0;
 }
+
+// language mode
+// copilot like ai
+// minimap
+// command line with all options
+// modline with ln col utf-8 lf clock if is changed or git dir
+// treesitter text highlight
+// lsp for autocompletion
+// git diff
+// file browser
+// terminal
+// search & replace & regex
+// pipe to commands
+// undo redo
+// save as
+// color picker
+// autopair brackets, quotes
+// snyk anlysis
+// open file
+// recent files
+// shortcut ident,comment
+// recently opens
+// timeline of files old 7 days
+// diff folder,clipboard
+// buffer window tabs
+// sudo save
+// macro
+// make tab indent
+// treesitter
+
+// make grafenic ./make not compile lib if not changed

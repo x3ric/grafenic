@@ -46,8 +46,7 @@ uninstall() {
 }
 
 fzf-splitted () {
-    if [[ -n "$TMUX" ]]
-    then
+    if [[ -n "$TMUX" ]]; then
         fzf --color=16 --reverse --ansi "$@"
     else
         fzf-tmux --color=16 -x --height ${FZF_TMUX_HEIGHT:-40%} --reverse --cycle --ansi "$@"
@@ -64,21 +63,16 @@ compile-library() {
 build() {
     clean
     uninstall
-    
     if [ -z "$1" ]; then
         SOURCES="./src/examples/$(ls ./src/examples | grep -v '^modules$' | sed 's/\.c$//' | fzf-splitted).c"
     else
         SOURCES="./src/examples/$1.c"
     fi
-
     mkdir -p ./build/
-
     compile-library
-    
     if [ ! -f "/usr/local/lib/libgrafenic.so" ]; then
         install
     fi
-
     export LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
     echo -e "$CC $CFLAGS $SOURCES -o $TARGET -lgrafenic $LDFLAGS"
     $CC $CFLAGS $SOURCES -o $TARGET -lgrafenic $LDFLAGS
@@ -86,7 +80,8 @@ build() {
 
 run() {
     build $1
-    ./"$TARGET"
+    echo "./\"$TARGET\" $2"
+    ./"$TARGET" $2
 }
 
 debug() {
@@ -96,7 +91,7 @@ debug() {
 
 case $1 in
     run)
-        run $2
+        run $2 ${@:3}
         ;;
     build)
         build $2
