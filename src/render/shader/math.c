@@ -1,18 +1,25 @@
 
-void MatrixIdentity(GLfloat* out) {
-    memset(out, 0, 16 * sizeof(GLfloat));
+void MatrixIdentity(float* out) {
+    _mm_store_ps(out, _mm_setzero_ps());
+    _mm_store_ps(out + 4, _mm_setzero_ps());
+    _mm_store_ps(out + 8, _mm_setzero_ps());
+    _mm_store_ps(out + 12, _mm_setzero_ps());
     out[0] = out[5] = out[10] = out[15] = 1.0f;
 }
 
+typedef __m128 v4sf;
 void MatrixMultiply(const GLfloat* a, const GLfloat* b, GLfloat* result) {
-    for (int i = 0; i < 4; ++i) {
-        for (int j = 0; j < 4; ++j) {
-            result[i * 4 + j] = a[i * 4 + 0] * b[0 * 4 + j] +
-                                a[i * 4 + 1] * b[1 * 4 + j] +
-                                a[i * 4 + 2] * b[2 * 4 + j] +
-                                a[i * 4 + 3] * b[3 * 4 + j];
-        }
+    const v4sf* va = (const v4sf*)a;
+    const v4sf* vb = (const v4sf*)b;
+    v4sf vres[4];
+    for (int i = 0; i < 4; i++) {
+        v4sf row = va[i];
+        vres[i] = row[0] * vb[0] + 
+                 row[1] * vb[1] + 
+                 row[2] * vb[2] + 
+                 row[3] * vb[3];
     }
+    __builtin_memcpy(result, vres, sizeof(vres));
 }
 
 void MatrixLookAt(GLfloat eyeX, GLfloat eyeY, GLfloat eyeZ, GLfloat centerX, GLfloat centerY, GLfloat centerZ, GLfloat upX, GLfloat upY, GLfloat upZ, GLfloat* matrix) {

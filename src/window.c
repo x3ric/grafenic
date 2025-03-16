@@ -1,51 +1,4 @@
-#define GLFW_INCLUDE_NONE
-#include <GLFW/glfw3.h>
-#include <GL/glew.h>
-#include <GL/gl.h>
-#include <stdbool.h>
-#include <time.h>
-
-typedef struct {
-    bool  input;
-    bool  wireframe;
-    bool  point;
-    float pointsize;
-    bool  fps;
-} Debug;
-
-typedef struct {
-    bool        vsync;
-    bool        hided;
-    bool        floating;
-    bool        fullscreen;
-    bool        transparent;
-    bool        disablecursor;
-    bool        hidecursor;
-    bool        decorated;
-    bool        oldvsync;
-    bool        oldhided;
-    bool        oldfullscreen;
-    bool        oldhidecursor;
-    bool        olddisablecursor;
-} Options;
-
-typedef struct {
-    GLFWwindow*           w;
-    Debug                 debug;
-    char*                 title; 
-    int                   screen_height;
-    int                   screen_width;
-    int                   height;
-    int                   width;
-    int                   refresh_rate;
-    double                time;
-    double                deltatime;
-    int                   fpslimit;
-    double                fps;
-    int                   samples;
-    int                   depthbits;
-    Options               opt;
-} Window;
+#include "window.h"
 
 Window window;
 
@@ -55,24 +8,35 @@ Window window;
 #include "render/draw.c"
 
 void WindowFrames() {
-    static double previousFrameTime = 0.0;
-    window.time = glfwGetTime();
-    double elapsedTime = window.time - previousFrameTime;
-    double targetTime = (window.fpslimit > 0) ? (1.0 / window.fpslimit) : 0.0;
-    if (window.fpslimit > 0 && elapsedTime < targetTime) {
-        double sleepTime = (targetTime - elapsedTime) * 1000000;
-        if (sleepTime > 0) {
-            usleep((unsigned int)sleepTime);
+    static double __attribute__((aligned(16))) lastFPSTime = 0.0;
+    static int __attribute__((aligned(16))) frameCount = 0;
+    static double __attribute__((aligned(16))) previousFrameTime = 0.0;
+    const double currentTime = glfwGetTime();
+    window.deltatime = currentTime - previousFrameTime;
+    window.time = currentTime;
+    if (window.fpslimit > 0) {
+        const double targetTime = 1.0 / window.fpslimit;
+        const double sleepTime = targetTime - window.deltatime;
+        if (sleepTime > 0.0) {
+            const long nsec = (long)(sleepTime * 1.0e9);
+            const struct timespec ts = {
+                .tv_sec = 0,
+                .tv_nsec = nsec
+            };
+            nanosleep(&ts, NULL);
         }
-        window.time = glfwGetTime();
-        elapsedTime = window.time - previousFrameTime;
     }
-    window.deltatime = elapsedTime;
-    window.fps = (elapsedTime > 0.0) ? (1.0 / elapsedTime) : 0.0;
-    previousFrameTime = window.time;
-    if (window.debug.fps) {
-        print("FPS: %.0f\n", window.fps);
+    ++frameCount;
+    const double timeElapsed = currentTime - lastFPSTime;
+    if (timeElapsed >= 1.0) {
+        window.fps = (double)frameCount / timeElapsed;
+        if (window.debug.fps) {
+            printf("FPS: %.0f\n", window.fps);
+        }
+        frameCount = 0;
+        lastFPSTime = currentTime;
     }
+    previousFrameTime = currentTime;
 }
 
 void WindowClear() {

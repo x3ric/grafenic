@@ -1,26 +1,3 @@
-#include <ctype.h>
-#include <stdarg.h>
-#include <stdbool.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <math.h>
-#include <sys/stat.h>
-#include <sys/inotify.h>
-#include <unistd.h>
-#include <limits.h>
-
-#ifndef PI
-    #define PI 3.14159265358979323846f
-#endif
-
-typedef struct {
-    float x, y;
-} Vec2;
-
-typedef struct {
-    float x, y, z;
-} Vec3;
 
 // Debug
 
@@ -39,7 +16,7 @@ void print(const char* format, ...) {
     va_end(args);
 }
 
-// Text manipulation
+// Text
 
 const char* text(const char* format, ...) {
     static char buffer[100];
@@ -169,7 +146,7 @@ const char *textlower(const char *text) {
     return buffer;
 }
 
-// Random
+// Utils
 
 void RandomSeed(unsigned int seed)
 {
@@ -185,8 +162,6 @@ int RandomValue(int min, int max)
     }
     return (rand()%(abs(max-min)+1) + min);
 }
-
-// Utils
 
 void OpenURL(const char *url) {
     if (url == NULL) {
@@ -228,7 +203,13 @@ char *GetClipboardText(void) {
     return text;
 }
 
-// Basic
+int MaxInt(int a, int b) {
+    return (a > b) ? a : b;
+}
+
+int MinInt(int a, int b) {
+    return (a < b) ? a : b;
+}
 
 int Clamp(int value, int min, int max) {
     if (value < min) {
@@ -238,6 +219,14 @@ int Clamp(int value, int min, int max) {
     } else {
         return value;
     }
+}
+
+int Scaling(int fontsize) {
+    float widthScale = (float)window.screen_width / window.width;
+    float heightScale = (float)window.screen_height / window.height;
+    float scale = fmin(widthScale, heightScale);
+    int scaledFontSize = (int)(fontsize * scale);
+    return (fontsize > 0) ? fmax(scaledFontSize, 1) : 0;
 }
 
 // Smothing
@@ -304,21 +293,11 @@ bool Wait(double delaySeconds) {
     return false;
 }
 
-// Collision Checking
+// Collision
 
 bool IsInside(float x, float y, float rectX, float rectY, float rectWidth, float rectHeight) {
     return x >= rectX && x <= rectX + rectWidth &&
         y >= rectY && y <= rectY + rectHeight;
-}
-
-// Ratio resize
-
-int Scaling(int fontsize) {
-    float widthScale = (float)window.screen_width / window.width;
-    float heightScale = (float)window.screen_height / window.height;
-    float scale = fmin(widthScale, heightScale);
-    int scaledFontSize = (int)(fontsize * scale);
-    return (fontsize > 0) ? fmax(scaledFontSize, 1) : 0;
 }
 
 // File checks

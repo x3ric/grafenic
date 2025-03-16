@@ -50,7 +50,16 @@ typedef struct {
 
 extern Window window;
 
-// INPUT
+int WindowInit(int width, int height, char* title);
+void WindowFrames();
+void WindowClear();
+void WindowProcess();
+void window_buffersize_callback(GLFWwindow* glfw_window, int width, int height);
+int WindowState();
+void WindowStateSet(bool state);
+void WindowClose();
+
+// Input
     #include <stdio.h>
     #include <stdlib.h>
     #include <string.h>
@@ -71,29 +80,30 @@ extern Window window;
 
     extern Mouse mouse;
 
-    // Key handling
+    #define MAX_JOYSTICKS (GLFW_JOYSTICK_LAST + 1)
+
+    typedef struct {
+        int joysticks[MAX_JOYSTICKS];
+        int count;
+    } JoystickManager;
+
+    extern JoystickManager joystickManager;
+
+    // Key
         int KeyChar(const char* character);
         int isKeyDown(const char* character);
         int isKeyUp(const char* character);
         bool isKeyPressed(const char* character, double interval);
         int isKey(const char* character);
         void isKeyReset(const char* character);
-    // Mouse handling
+    // Mouse
         Mouse MouseInit();
         void SetCursorPos(float x, float y);
         int isMouseButtonDown(int button);
         int isMouseButtonUp(int button);
         int isMouseButton(const int button);
         void isMouseButtonReset(const int button);
-    // Gamepad and Joystick handling
-
-        #define MAX_JOYSTICKS (GLFW_JOYSTICK_LAST + 1)
-
-        typedef struct {
-            int joysticks[MAX_JOYSTICKS];
-            int count;
-        } JoystickManager;
-
+    // Gamepad & Joystick
         void LoadJoysticks(void);
         JoystickManager GetJoysticks(void);
         const char* GetJoystickName(int jid);
@@ -104,7 +114,7 @@ extern Window window;
         void ResetGamepadButton(const char* character);
         int GetGamepadAxisValue(const char* axisName);
         float GetGamepadAxis(int gamepadId, const char* axisName);
-// UTILS
+// Utils
     #include <ctype.h>
     #include <stdarg.h>
     #include <stdbool.h>
@@ -113,6 +123,7 @@ extern Window window;
     #include <string.h>
     #include <math.h>
     #include <sys/stat.h>
+    #include <sys/inotify.h>
     #include <unistd.h>
     #include <limits.h>
 
@@ -128,57 +139,54 @@ extern Window window;
         float x, y, z;
     } Vec3;
 
-
-    // Error handling
-    void ErrorCallback(int error, const char* description);
-    // Console functions
-    void ClearOutput();
-    void print(const char* format, ...);
-    // Text manipulation
-    const char* text(const char* format, ...);
-    int textint(char *str);
-    float textfloat(char *str);
-    unsigned int textlength(const char *text);
-    const char *textsubtext(const char *text, int position, int length);
-    char *textreplace(const char *text, const char *replace, const char *by);
-    char *textinsert(const char *text, const char *insert, int position);
-    const char *textjoin(const char **textList, const char *delimiter, int count);
-    const char **textsplit(const char *text, char delimiter, int *count);
-    void textappend(char *text, const char *append, int *position);
-    int textfindindex(const char *text, const char *find);
-    const char *textupper(const char *text);
-    const char *textlower(const char *text);
-    // Random number generation
-    void RandomSeed(unsigned int seed);
-    int RandomValue(int min, int max);
-    // Utility functions
-    void OpenURL(const char *url);
-    void SetClipboardText(const char *text);
-    char *GetClipboardText(void);
-    // Basic utilities
-    int Clamp(int value, int min, int max);
-    // Smoothing functions
-    float Easing(float t, const char *text);
-    float Motion(float speed, float intensity);
-    float Lerp(float start, float end, float t);
-    // Time functions
-    double GetTime();
-    void SetTime(double time);
-    bool Wait(double delaySeconds);
-    // Collision checking
-    bool IsInside(float x, float y, float rectX, float rectY, float rectWidth, float rectHeight);
-    // Ratio resize
-    int Scaling(int fontsize);
+    // Debug
+        void ErrorCallback(int error, const char* description);
+        void ClearOutput();
+        void print(const char* format, ...);
+    // Text
+        const char* text(const char* format, ...);
+        int textint(char *str);
+        float textfloat(char *str);
+        unsigned int textlength(const char *text);
+        const char *textsubtext(const char *text, int position, int length);
+        char *textreplace(const char *text, const char *replace, const char *by);
+        char *textinsert(const char *text, const char *insert, int position);
+        const char *textjoin(const char **textList, const char *delimiter, int count);
+        const char **textsplit(const char *text, char delimiter, int *count);
+        void textappend(char *text, const char *append, int *position);
+        int textfindindex(const char *text, const char *find);
+        const char *textupper(const char *text);
+        const char *textlower(const char *text);
+    // Utilits
+        void RandomSeed(unsigned int seed);
+        int RandomValue(int min, int max);
+        void OpenURL(const char *url);
+        void SetClipboardText(const char *text);
+        char *GetClipboardText(void);
+        int MaxInt(int a, int b);
+        int MinInt(int a, int b);
+        int Clamp(int value, int min, int max);
+        int Scaling(int fontsize);
+    // Smoothing
+        float Easing(float t, const char *text);
+        float Motion(float speed, float intensity);
+        float Lerp(float start, float end, float t);
+    // Time
+        double GetTime();
+        void SetTime(double time);
+        bool Wait(double delaySeconds);
+    // Collision
+        bool IsInside(float x, float y, float rectX, float rectY, float rectWidth, float rectHeight);
     // File checks
-    bool DirExists(const char* path);
-    bool FileExists(const char* filename);
-    time_t GetFileModTime(const char* filePath);
-    int AddWatch(int inotifyFd, const char* filePath);
+        bool DirExists(const char* path);
+        bool FileExists(const char* filename);
+        time_t GetFileModTime(const char* filePath);
+        int AddWatch(int inotifyFd, const char* filePath);
     // File saving
-    char* FileLoad(const char* path);
-    char* FileSave(const char* path, const char* text);
-    void FileClear(const char* path);
-// AUDIO
+        char* FileLoad(const char* path);
+        char* FileSave(const char* path, const char* text);
+        void FileClear(const char* path);
+// Audio
     #define MINIAUDIO_IMPLEMENTATION
     #include <miniaudio.h>
 
@@ -195,65 +203,66 @@ extern Window window;
 
     extern Audio audio;
 
-    // Audio functions
-    void AudioInit();
-    void AudioVolume(float value);
-    float GetAudioVolume();
-    void AudioPlay(char *file);
-    void AudioStop();
+    // Audio
+        void AudioInit();
+        void AudioVolume(float value);
+        float GetAudioVolume();
+        void AudioPlay(char *file);
+        void AudioStop();
+    // Sound
+        Sound* SoundLoad(char *file);
+        void SoundPlay(Sound* sound);
+        void SoundStop(Sound* sound);
+        void SetSoundStartTime(Sound* sound, ma_uint64 time);
+        void SetSoundEndTime(Sound* sound, ma_uint64 time);
+        ma_uint64 GetSoundTime(Sound* sound);
+        bool GetSoundEnd(Sound* sound);
+        bool GetSoundPlaying(Sound* sound);
+        float GetSoundPitch(Sound* sound);
+        void SetSoundPitch(Sound* sound, float value);
+        void SetSoundPitchSemitones(Sound* sound, float semitones);
+        float GetSoundPan(Sound* sound);
+        void SetSoundPan(Sound* sound, float value);
+        bool GetSoundLoop(Sound* sound);
+        void SetSoundLoop(Sound* sound, bool value);
+        void SoundSetPositioning(ma_sound* pSound, ma_positioning positioning);
+        ma_positioning SoundGetPositioning(const ma_sound* pSound);
+        void SoundSetPosition(ma_sound* pSound, float x, float y, float z);
+        ma_vec3f SoundGetPosition(const ma_sound* pSound);
+        void SoundSetDirection(ma_sound* pSound, float x, float y, float z);
+        ma_vec3f SoundGetDirection(const ma_sound* pSound);
+        void SoundSetVelocity(ma_sound* pSound, float x, float y, float z);
+        ma_vec3f SoundGetVelocity(const ma_sound* pSound);
+        void SoundEnableSpatialization(ma_sound* pSound);
+        void SoundDisableSpatialization(ma_sound* pSound);
+        void SoundSetCone(ma_sound* pSound, float innerAngleInRadians, float outerAngleInRadians, float outerGain);
+        void SoundGetCone(const ma_sound* pSound, float* pInnerAngleInRadians, float* pOuterAngleInRadians, float* pOuterGain);
+        void SoundSetDopplerFactor(ma_sound* pSound, float dopplerFactor);
+        float SoundGetDopplerFactor(const ma_sound* pSound);
+        void SoundSetStopTimeWithFadeInMilliseconds(ma_sound* pSound, ma_uint64 stopAbsoluteGlobalTimeInMilliseconds, ma_uint64 fadeLengthInMilliseconds);
+        ma_result SoundStopWithFadeInMilliseconds(ma_sound* pSound, ma_uint64 fadeLengthInFrames);
+        void SoundSetFadeStartInMilliseconds(ma_sound* pSound, float volumeBeg, float volumeEnd, ma_uint64 fadeLengthInMilliseconds, ma_uint64 absoluteGlobalTimeInMilliseconds);
+        void SoundSetFadeInMilliseconds(ma_sound* pSound, float volumeBeg, float volumeEnd, ma_uint64 fadeLengthInMilliseconds);
+        float SoundGetCurrentFadeVolume(const ma_sound* pSound);
+        void SoundSetAttenuationModel(ma_sound* pSound, ma_attenuation_model attenuationModel);
+        ma_attenuation_model SoundGetAttenuationModel(const ma_sound* pSound);
+        void SoundSetRolloff(ma_sound* pSound, float rolloff);
+        float SoundGetRolloff(const ma_sound* pSound);
+        void SoundSetMinGain(ma_sound* pSound, float minGain);
+        float SoundGetMinGain(const ma_sound* pSound);
+        void SoundSetMaxGain(ma_sound* pSound, float maxGain);
+        float SoundGetMaxGain(const ma_sound* pSound);
+        void SoundSetMinDistance(ma_sound* pSound, float minDistance);
+        float SoundGetMinDistance(const ma_sound* pSound);
+        void SoundSetMaxDistance(ma_sound* pSound, float maxDistance);
+        float SoundGetMaxDistance(const ma_sound* pSound);
+        void SoundSetPinnedListenerIndex(ma_sound* pSound, ma_uint32 listenerIndex);
+        ma_uint32 SoundGetPinnedListenerIndex(const ma_sound* pSound);
+        ma_uint32 SoundGetListenerIndex(const ma_sound* pSound);
+        ma_vec3f SoundGetDirectionToListener(const ma_sound* pSound);
+// Shader
+    #include <immintrin.h>
 
-    // Sound functions
-    Sound* SoundLoad(char *file);
-    void SoundPlay(Sound* sound);
-    void SoundStop(Sound* sound);
-    void SetSoundStartTime(Sound* sound, ma_uint64 time);
-    void SetSoundEndTime(Sound* sound, ma_uint64 time);
-    ma_uint64 GetSoundTime(Sound* sound);
-    bool GetSoundEnd(Sound* sound);
-    bool GetSoundPlaying(Sound* sound);
-    float GetSoundPitch(Sound* sound);
-    void SetSoundPitch(Sound* sound, float value);
-    void SetSoundPitchSemitones(Sound* sound, float semitones);
-    float GetSoundPan(Sound* sound);
-    void SetSoundPan(Sound* sound, float value);
-    bool GetSoundLoop(Sound* sound);
-    void SetSoundLoop(Sound* sound, bool value);
-    void SoundSetPositioning(ma_sound* pSound, ma_positioning positioning);
-    ma_positioning SoundGetPositioning(const ma_sound* pSound);
-    void SoundSetPosition(ma_sound* pSound, float x, float y, float z);
-    ma_vec3f SoundGetPosition(const ma_sound* pSound);
-    void SoundSetDirection(ma_sound* pSound, float x, float y, float z);
-    ma_vec3f SoundGetDirection(const ma_sound* pSound);
-    void SoundSetVelocity(ma_sound* pSound, float x, float y, float z);
-    ma_vec3f SoundGetVelocity(const ma_sound* pSound);
-    void SoundEnableSpatialization(ma_sound* pSound);
-    void SoundDisableSpatialization(ma_sound* pSound);
-    void SoundSetCone(ma_sound* pSound, float innerAngleInRadians, float outerAngleInRadians, float outerGain);
-    void SoundGetCone(const ma_sound* pSound, float* pInnerAngleInRadians, float* pOuterAngleInRadians, float* pOuterGain);
-    void SoundSetDopplerFactor(ma_sound* pSound, float dopplerFactor);
-    float SoundGetDopplerFactor(const ma_sound* pSound);
-    void SoundSetStopTimeWithFadeInMilliseconds(ma_sound* pSound, ma_uint64 stopAbsoluteGlobalTimeInMilliseconds, ma_uint64 fadeLengthInMilliseconds);
-    ma_result SoundStopWithFadeInMilliseconds(ma_sound* pSound, ma_uint64 fadeLengthInFrames);
-    void SoundSetFadeStartInMilliseconds(ma_sound* pSound, float volumeBeg, float volumeEnd, ma_uint64 fadeLengthInMilliseconds, ma_uint64 absoluteGlobalTimeInMilliseconds);
-    void SoundSetFadeInMilliseconds(ma_sound* pSound, float volumeBeg, float volumeEnd, ma_uint64 fadeLengthInMilliseconds);
-    float SoundGetCurrentFadeVolume(const ma_sound* pSound);
-    void SoundSetAttenuationModel(ma_sound* pSound, ma_attenuation_model attenuationModel);
-    ma_attenuation_model SoundGetAttenuationModel(const ma_sound* pSound);
-    void SoundSetRolloff(ma_sound* pSound, float rolloff);
-    float SoundGetRolloff(const ma_sound* pSound);
-    void SoundSetMinGain(ma_sound* pSound, float minGain);
-    float SoundGetMinGain(const ma_sound* pSound);
-    void SoundSetMaxGain(ma_sound* pSound, float maxGain);
-    float SoundGetMaxGain(const ma_sound* pSound);
-    void SoundSetMinDistance(ma_sound* pSound, float minDistance);
-    float SoundGetMinDistance(const ma_sound* pSound);
-    void SoundSetMaxDistance(ma_sound* pSound, float maxDistance);
-    float SoundGetMaxDistance(const ma_sound* pSound);
-    void SoundSetPinnedListenerIndex(ma_sound* pSound, ma_uint32 listenerIndex);
-    ma_uint32 SoundGetPinnedListenerIndex(const ma_sound* pSound);
-    ma_uint32 SoundGetListenerIndex(const ma_sound* pSound);
-    ma_vec3f SoundGetDirectionToListener(const ma_sound* pSound);
-// SHADER
     typedef struct {
         GLuint Program;
         const char* vertex;
@@ -267,29 +276,32 @@ extern Window window;
     extern GLuint VBO;
     extern GLuint EBO;
 
-    #define FLOAT_PER_VERTEX 5
-
     extern Shader shaderdefault;
     extern Shader shaderfont;
+    
+    #define FLOAT_PER_VERTEX 5
+    #define MAX_VERTICES 65536 // 64K vertices
+    #define MAX_INDICES 98304  // 96K indices
 
-    // SHADER UTILS
-        // Shader Utils
-            GLuint CompileShader(const char* shaderSource, GLenum type);
-            const char* LoadShaderText(const char* filepath);
-            GLuint LinkShaders(const char* vertex, const char* fragment);
-            Shader LoadShader(const char* vertex, const char* fragment);
-            Shader ShaderHotReload(Shader shader);
-            void DeleteShader(Shader shader);
-        // OpenGL Utils
-            void UnbindTexture();
-            void glTexOpt(GLint filter, GLint warp);
-            GLint GLuint1i(Shader shader, const char* var, float in);
-            GLint GLuint1f(Shader shader, const char* var, float in);
-            GLint GLuint2f(Shader shader, const char* var, float in1, float in2);
-            GLint GLuint3f(Shader shader, const char* var, float in1, float in2, float in3);
-            GLint GLuint4f(Shader shader, const char* var, float in1, float in2, float in3, float in4);
-            GLint GLumatrix4fv(Shader shader, const char* var, GLfloat* in);
-    // SHADER MATH
+    void InitializeShader();
+    void TerminateShader(void);
+
+    // Shader Utils
+        GLuint CompileShader(const char* shaderSource, GLenum type);
+        const char* LoadShaderText(const char* filepath);
+        GLuint LinkShaders(const char* vertex, const char* fragment);
+        Shader LoadShader(const char* vertex, const char* fragment);
+        Shader ShaderHotReload(Shader shader);
+        void DeleteShader(Shader shader);
+        void UnbindTexture();
+        void glTexOpt(GLint filter, GLint warp);
+        GLint GLuint1i(Shader shader, const char* var, float in);
+        GLint GLuint1f(Shader shader, const char* var, float in);
+        GLint GLuint2f(Shader shader, const char* var, float in1, float in2);
+        GLint GLuint3f(Shader shader, const char* var, float in1, float in2, float in3);
+        GLint GLuint4f(Shader shader, const char* var, float in1, float in2, float in3, float in4);
+        GLint GLumatrix4fv(Shader shader, const char* var, GLfloat* in);
+    // Shader Math
         void MatrixIdentity(GLfloat* out);
         void MatrixMultiply(const GLfloat* a, const GLfloat* b, GLfloat* result);
         void MatrixLookAt(GLfloat eyeX, GLfloat eyeY, GLfloat eyeZ, GLfloat centerX, GLfloat centerY, GLfloat centerZ, GLfloat upX, GLfloat upY, GLfloat upZ, GLfloat* matrix);
@@ -302,7 +314,7 @@ extern Window window;
         void TransformVertices(GLfloat *vertices, size_t vertexCount, const GLfloat *rotationMatrix, const Vec3 *positionOffset);
         Vec3 Vec3Add(const Vec3 vec1, const Vec3 vec2);
         void CombineTransformation(GLfloat* modelMatrix, const GLfloat* translationMatrix, const GLfloat* rotationMatrix);
-    // SHADER CAMERA
+    // Shader Camera
         typedef struct {
             Vec3 position;
             Vec3 localposition;
@@ -359,10 +371,7 @@ extern Window window;
         void Zelda(TriangleObject triangle);
         void Rect(RectObject rect);
         void Cube(CubeObject cube);
-
-    void InitializeShader();
-    void TerminateShader(void);
-// COLOR
+// Color
     typedef struct {
         GLubyte r;
         GLubyte g;
@@ -399,7 +408,7 @@ extern Window window;
     Color HexToColor(const char* hex);
     void glColor(Color color);
     void ClearColor(Color color);
-// CACHE
+// Cache
     typedef struct {
         GLuint texture;
         Color color;
@@ -407,15 +416,21 @@ extern Window window;
         int height;
         bool linear;
         bool isBitmap;
+        bool used;
+        unsigned long lastUsed;
     } CachedTexture;
 
-    // Texture Cache functions
-        GLuint CreateTextureFromBitmap(const unsigned char* bitmapData, int width, int height, bool linear);
-        GLuint CreateTextureFromColor(Color color, bool linear);
-        GLuint GetCachedTexture(Color color, bool linear, bool isBitmap, const unsigned char* bitmapData, int width, int height);
-        void CleanUpTextureCache(void);
-// DRAW
+    #define TEXTURE_CACHE_SIZE 256
+
+    GLuint CreateTextureFromBitmap(const unsigned char* bitmapData, int width, int height, bool linear);
+    GLuint CreateTextureFromColor(Color color, bool linear);
+    GLuint GetCachedTexture(Color color, bool linear, bool isBitmap, const unsigned char* bitmapData, int width, int height);
+    void CleanUpTextureCache(void);
+    void ResetTextureCache(void);
+// Draw
     void DrawRect(int x, int y, int width, int height, Color color);
+    void DrawRectBatch(int x, int y, int width, int height, Color color);
+    void FlushRectBatch();
     void DrawRectBorder(int x, int y, int width, int height, int thickness, Color color);
     void DrawLine(float x0, float y0, float x1, float y1, int thickness, Color color);
     void DrawCircle(int x, int y, int r, Color color);
@@ -423,7 +438,7 @@ extern Window window;
     void DrawTriangle(int x1, int y1, int x2, int y2, int x3, int y3, Color color);
     void DrawTriangleBorder(int x1, int y1, int x2, int y2, int x3, int y3, int thickness, Color color);
     void DrawCube(GLfloat size, GLfloat x, GLfloat y, GLfloat z, GLfloat rotx, GLfloat roty, GLfloat rotz, Color color);
-// IMAGE
+// Image
     #define STB_IMAGE_IMPLEMENTATION
     #include <stb_image.h>
     #define STB_IMAGE_WRITE_IMPLEMENTATION
@@ -446,62 +461,58 @@ extern Window window;
     void DrawImage(Img image, float x, float y, float width, float height, GLfloat angle);
     void DrawImageShader(Img image, float x, float y, float width, float height, GLfloat angle, Shader shader);
     void SaveScreenshot(const char *filename, int x, int y, int width, int height);
-// FONT
-    
+// Font
     #include <ft2build.h>
     #include FT_FREETYPE_H
+    #include FT_LCD_FILTER_H
     #include FT_GLYPH_H
     #include FT_OUTLINE_H
     #include FT_BITMAP_H
 
-    typedef struct {
-        float x0, y0, x1, y1;  // Coordinates of the glyph in the atlas (in pixels)
-        float xoff, yoff;      // Left/top offsets
-        float xadvance;        // Advance width
-        float u0, v0;          // Texture coordinates for the top-left corner of the glyph
-        float u1, v1;          // Texture coordinates for the bottom-right corner of the glyph
-    } Glyph;
-
+    #define STB_RECT_PACK_IMPLEMENTATION
+    #include <stb_rect_pack.h>
+    
     #define MAX_GLYPHS 256
+    #define ATLAS_FONT_SIZE 128.0
+    #define CHAR_CACHE_SIZE 1024
+    #define STRING_CACHE_SIZE 128
+    #define MAX_CACHED_STRING_LEN 64
+    #define FONT_CACHE_SIZE 64
+    #define MAX_BATCH_CHARS 4096
 
     typedef struct {
-        FT_Library library;       // FreeType library instance
-        FT_Face face;             // Font face
-        unsigned char* atlasData; // Atlas texture data
-        GLuint textureID;         // OpenGL texture ID
-        int atlasWidth;           // Dimensions of the atlas Width
-        int atlasHeight;          // Dimensions of the atlas Height
-        Glyph glyphs[MAX_GLYPHS]; // Glyph data for ASCII characters 32-127
-        float fontSize;           // Font size for which glyphs were generated
-        bool nearest;             // Nearest filter
+        float x0, y0, x1, y1;      // Coordinates of the glyph in the atlas (in pixels)
+        float xoff, yoff;          // Left/top offsets
+        float xadvance;            // Advance width
+        float u0, v0;              // Texture coordinates for the top-left corner of the glyph
+        float u1, v1;              // Texture coordinates for the bottom-right corner of the glyph
+    } Glyph;
+    
+    typedef struct {
+        FT_Library library;        // FreeType library instance
+        FT_Face face;              // Font face
+        unsigned char* atlasData;  // Atlas texture data
+        GLuint textureID;          // OpenGL texture ID
+        int oversampling;          // Dimensions of the oversampling
+        int atlasWidth;            // Dimensions of the atlas Width
+        int atlasHeight;           // Dimensions of the atlas Height
+        Glyph glyphs[MAX_GLYPHS];  // Glyph data for ASCII characters 32-127
+        float fontSize;            // Font size for which glyphs were generated
+        bool nearest;              // Nearest filter
+        bool subpixel;             // Subpixel
     } Font;
-
+    
     typedef struct {
         int width;
         int height;
     } TextSize;
-
-    typedef struct FontCacheNode {
-        float fontSize;
-        Font font;
-        struct FontCacheNode* next;
-    } FontCacheNode;
-
-    int CalculateAtlasSize(int numGlyphs, float fontSize, int oversampling);
+    
     Font GenAtlas(Font font);
     Font LoadFont(const char* fontPath);
     Font SetFontSize(Font font, float fontSize);
+    void PreloadFontSizes(Font font);
     TextSize GetTextSize(Font font, float fontSize, const char* text);
     void RenderShaderText(ShaderObject obj, Color color, float fontSize);
     void DrawText(int x, int y, Font font, float fontSize, const char* text, Color color);
-    void FreeFontCache();
-// END
-
-int WindowInit(int width, int height, char* title);
-void WindowFrames();
-void WindowClear();
-void WindowProcess();
-void window_buffersize_callback(GLFWwindow* glfw_window, int width, int height);
-int WindowState();
-void WindowStateSet(bool state);
-void WindowClose();
+    void DrawTextBatch(int x, int y, Font font, float fontSize, const char* text, Color color);
+    void FlushTextBatch();
