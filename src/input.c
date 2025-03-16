@@ -1,7 +1,3 @@
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <ctype.h>
 
 int KeyChar(const char* character) {
     if (!character) {
@@ -245,19 +241,6 @@ void KeyCallback(GLFWwindow* glfw_window, int key, int scancode, int action, int
 
 // MOUSE
 
-typedef struct {
-    double x, y;
-    double lastx, lasty;
-    bool scrolling;
-} MouseScroll;
-
-typedef struct {
-    double x, y;
-    double lastx, lasty;
-    MouseScroll scroll;
-    bool moving;
-} Mouse;
-
 Mouse mouse;
 
 Mouse MouseInit() {
@@ -308,12 +291,7 @@ void isMouseButtonReset(const int button) {
 
 #define MAX_JOYSTICKS (GLFW_JOYSTICK_LAST + 1)
 
-typedef struct {
-    int joysticks[MAX_JOYSTICKS];
-    int count;
-} JoystickManager;
-
-static JoystickManager joystickManager;
+JoystickManager joystickManager;
 
 JoystickManager GetJoysticks(void){
     return joystickManager;

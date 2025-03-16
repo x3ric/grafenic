@@ -1,17 +1,3 @@
-#define STB_IMAGE_IMPLEMENTATION
-#include <stb_image.h>
-
-typedef struct {
-    GLuint raw;         
-    unsigned char* data;
-    int width, height;  
-    int channels;
-} Img;
-
-typedef struct {
-    const char *filename;
-    bool nearest;
-} ImgInfo;
 
 Img LoadImage(ImgInfo info) {
     Img img;
@@ -62,9 +48,6 @@ void DrawImageShader(Img image, float x, float y, float width, float height, GLf
     });
     UnbindTexture();
 }
-
-#define STB_IMAGE_WRITE_IMPLEMENTATION
-#include <stb_image_write.h>
 
 void SaveScreenshot(const char *filename, int x, int y, int width, int height) {
     printf("Saving screenshot to -> %s\n", filename);

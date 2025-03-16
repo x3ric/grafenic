@@ -1,11 +1,11 @@
 #version 330 core
 
 uniform sampler2D Texture;
-uniform vec2 iResolution;
-uniform vec2 iMouse;
-uniform float iTime;
+//uniform vec2 iResolution;
+//uniform vec2 iMouse;
+//uniform float iTime;
+//uniform float Size;
 uniform vec4 Color;
-uniform float Size;
 
 in vec2 texCoord;
 out vec4 fragColor;

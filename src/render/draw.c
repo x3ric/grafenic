@@ -19,6 +19,102 @@ void DrawRect(int x, int y, int width, int height, Color color) {
     UnbindTexture();
 }
 
+typedef struct {
+    GLfloat vertices[20];  // 5 attributes (x,y,z,u,v) for 4 vertices
+    Color color;
+} BatchRect;
+
+#define MAX_BATCH_RECTS 4096
+static BatchRect rectBatch[MAX_BATCH_RECTS];
+static GLuint rectIndices[MAX_BATCH_RECTS * 6];
+static int rectBatchCount = 0;
+static bool rectIndicesInitialized = false;
+
+void DrawRectBatch(int x, int y, int width, int height, Color color) {
+    if (color.a == 0) color.a = 255;
+    if (rectBatchCount >= MAX_BATCH_RECTS) {
+        FlushRectBatch();
+    }
+    if (!rectIndicesInitialized) {
+        for (int i = 0; i < MAX_BATCH_RECTS; i++) {
+            int idx = i * 6;
+            int vstart = i * 4;
+            rectIndices[idx + 0] = vstart + 0; // Bottom Left
+            rectIndices[idx + 1] = vstart + 1; // Bottom Right
+            rectIndices[idx + 2] = vstart + 2; // Top Left
+            rectIndices[idx + 3] = vstart + 1; // Bottom Right
+            rectIndices[idx + 4] = vstart + 3; // Top Right
+            rectIndices[idx + 5] = vstart + 2; // Top Left
+        }
+        rectIndicesInitialized = true;
+    }
+    BatchRect* rect = &rectBatch[rectBatchCount];
+    rect->color = color;
+    float u0 = 0.0f, v0 = 0.0f;
+    float u1 = 1.0f, v1 = 1.0f;
+    // Bottom Left
+    rect->vertices[0] = (float)x;
+    rect->vertices[1] = (float)(y + height);
+    rect->vertices[2] = 0.0f;
+    rect->vertices[3] = u0;
+    rect->vertices[4] = v1;
+    // Bottom Right
+    rect->vertices[5] = (float)(x + width);
+    rect->vertices[6] = (float)(y + height);
+    rect->vertices[7] = 0.0f;
+    rect->vertices[8] = u1;
+    rect->vertices[9] = v1;
+    // Top Left
+    rect->vertices[10] = (float)x;
+    rect->vertices[11] = (float)y;
+    rect->vertices[12] = 0.0f;
+    rect->vertices[13] = u0;
+    rect->vertices[14] = v0;
+    // Top Right
+    rect->vertices[15] = (float)(x + width);
+    rect->vertices[16] = (float)y;
+    rect->vertices[17] = 0.0f;
+    rect->vertices[18] = u1;
+    rect->vertices[19] = v0;
+    rectBatchCount++;
+}
+
+void FlushRectBatch() {
+    if (rectBatchCount == 0) return;
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    int startRect = 0;
+    Color currentColor = rectBatch[0].color;
+    for (int i = 1; i <= rectBatchCount; i++) {
+        bool colorChanged = i == rectBatchCount || 
+            memcmp(&rectBatch[i].color, &currentColor, sizeof(Color)) != 0;
+        if (colorChanged) {
+            int rectCount = i - startRect;
+            GLfloat tempVertices[MAX_BATCH_RECTS * 20];
+            for (int j = 0; j < rectCount; j++) {
+                memcpy(&tempVertices[j * 20], rectBatch[startRect + j].vertices, 20 * sizeof(GLfloat));
+            }
+            GLuint textureID = GetCachedTexture(currentColor, true, false, NULL, 0, 0);
+            glBindTexture(GL_TEXTURE_2D, textureID);
+            RenderShader((ShaderObject){
+                camera, 
+                shaderdefault, 
+                tempVertices, 
+                rectIndices,
+                rectCount * 20 * sizeof(GLfloat),
+                rectCount * 6 * sizeof(GLuint),
+                camera.transform
+            });
+            if (i < rectBatchCount) {
+                startRect = i;
+                currentColor = rectBatch[i].color;
+            }
+        }
+    }
+    UnbindTexture();
+    rectBatchCount = 0;
+}
+
 void DrawRectBorder(int x, int y, int width, int height, int thickness, Color color) {
     if (color.a == 0) color.a = 255;
     DrawRect(x, y, width, thickness, color);

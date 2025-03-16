@@ -1,16 +1,3 @@
-#define MINIAUDIO_IMPLEMENTATION
-#include <miniaudio.h>
-
-typedef struct {
-    int       channels;
-    int       sample_rate;
-    char*     sink_title;
-    ma_engine engine;
-} Audio;
-
-typedef struct {
-    ma_sound ma;
-} Sound;
 
 Audio audio = {
     2,

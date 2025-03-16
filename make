@@ -2,7 +2,7 @@
 
 CC="clang -w -g -Wextra"
 FREETYPE="$(pkg-config --cflags freetype2)"
-CFLAGS="-I./deps -I./src $FREETYPE"
+CFLAGS="-I./deps -I./src"
 LDFLAGS="-lglfw -lGL -lGLEW -lm -lfreetype"
 TARGET="grafenic"
 
@@ -55,15 +55,23 @@ fzf-splitted () {
 }
 
 compile-library() {
-    echo -e "$CC $CFLAGS -fPIC -c src/window.c -o ./build/window.o -O3"
-    $CC $CFLAGS -fPIC -c src/window.c -o ./build/window.o
-    echo -e "$CC $CFLAGS -shared -o ./build/libgrafenic.so ./build/window.o $LDFLAGS"
-    $CC $CFLAGS -shared -o ./build/libgrafenic.so ./build/window.o $LDFLAGS
+    echo "$(find ./src -type f -exec md5sum {} + | sort | md5sum | cut -d' ' -f1)" > ./build/src.hash
+    echo -e "$CC $CFLAGS \"\$(pkg-config --cflags freetype2)\" -fPIC -c src/window.c -o ./build/window.o"
+    $CC $CFLAGS $FREETYPE -fPIC -c src/window.c -o ./build/window.o
+    echo -e "$CC $CFLAGS  \"\$(pkg-config --cflags freetype2)\" -shared -o ./build/libgrafenic.so ./build/window.o $LDFLAGS"
+    $CC $CFLAGS  $FREETYPE -shared -o ./build/libgrafenic.so ./build/window.o $LDFLAGS
 }
 
 build() {
-    clean
-    #uninstall # Useful when writing the library
+    echo -e "rm -rf ./$TARGET"
+    rm -rf ./$TARGET
+    if [ -f "./build/src.hash" ]; then
+        if [ "$(find ./src -type f -exec md5sum {} + | sort | md5sum | cut -d' ' -f1)" != "$(cat ./build/src.hash)" ]; then
+            echo -e "rm -rf ./build/*"
+            rm -rf ./build/
+            uninstall
+        fi
+    fi
     if [ -z "$1" ]; then
         SOURCES="./projects/$(ls ./projects | grep -v '^modules$' | sed 's/\.c$//' | fzf-splitted).c"
     else
@@ -74,10 +82,10 @@ build() {
         compile-library
         install
     fi
-    CFLAGS="-I./deps -I./projects -I./src $FREETYPE"
+    CFLAGS="-I./deps -I./projects"
     export LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
-    echo -e "$CC $CFLAGS $SOURCES -o $TARGET -lgrafenic $LDFLAGS"
-    $CC $CFLAGS $SOURCES -o $TARGET -lgrafenic $LDFLAGS
+    echo -e "$CC $CFLAGS \"\$(pkg-config --cflags freetype2)\" $SOURCES -o $TARGET -lgrafenic $LDFLAGS"
+    $CC $CFLAGS $FREETYPE $SOURCES -o $TARGET -lgrafenic $LDFLAGS
 }
 
 run() {

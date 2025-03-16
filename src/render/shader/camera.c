@@ -1,17 +1,4 @@
 
-typedef struct {
-    Vec3 position;
-    Vec3 localposition;
-    Vec3 rotation;
-} Transform;
-
-typedef struct {
-    Transform transform;
-    float fov;
-    float far;
-    float near;
-} Camera;
-
 Camera camera = {{
     0.0f, 0.0f, 0.0f,   // Position: x, y, z
     0.0f, 0.0f, 0.0f,   // LocalPosition: x, y, z
@@ -20,17 +7,6 @@ Camera camera = {{
     0.0f,               // Near Distance
     0.0f                // Far Distance
 };
-
-typedef struct {
-    Camera cam;
-    Shader shader;
-    GLfloat *vertices;
-    GLuint *indices;
-    GLfloat size_vertices;
-    GLfloat size_indices;
-    Transform transform;
-    bool is3d;
-} ShaderObject;
 
 void CalculateProjections(ShaderObject obj, GLfloat *Model, GLfloat *Projection, GLfloat *View) {
     Vec3 lpos = obj.transform.localposition;
@@ -140,14 +116,6 @@ void RenderShader(ShaderObject obj) {
         }
 }
 
-typedef struct {
-    Vec3 vert0;
-    Vec3 vert1;
-    Vec3 vert2;
-    Shader shader;
-    Camera cam;
-} TriangleObject;
-
 void Triangle(TriangleObject triangle) {
     GLfloat ndcX0, ndcY0, ndcX1, ndcY1, ndcX2, ndcY2;
     if (triangle.cam.fov > 0.0f) {
@@ -238,15 +206,6 @@ void Zelda(TriangleObject triangle) {
     RenderShader((ShaderObject){triangle.cam, triangle.shader, vertices, indices, sizeof(vertices), sizeof(indices), triangle.cam.transform});
 }
 
-typedef struct {
-    Vec3 vert0;  // Bottom Left
-    Vec3 vert1;  // Bottom Right
-    Vec3 vert2;  // Top Left
-    Vec3 vert3;  // Top Right
-    Shader shader;
-    Camera cam;
-} RectObject;
-
 void Rect(RectObject rect) {
     GLfloat ndcX0, ndcY0, ndcX1, ndcY1, ndcX2, ndcY2, ndcX3, ndcY3;
     if (rect.cam.fov > 0.0f) { // Perspective projection
@@ -288,13 +247,6 @@ void Rect(RectObject rect) {
     GLuint indices[] = {0, 1, 2, 3, 4, 5};
     RenderShader((ShaderObject){rect.cam, rect.shader, vertices, indices, sizeof(vertices), sizeof(indices), rect.cam.transform});
 }
-
-typedef struct {
-    Transform transform;
-    int size;
-    Shader shader;
-    Camera cam;
-} CubeObject;
 
 void Cube(CubeObject cube) {
     GLfloat hs = cube.size / 2.0f;
