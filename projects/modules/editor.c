@@ -324,7 +324,6 @@ void DrawScrollbarAndMinimap() {
     int FULL_HEIGHT=window.screen_height;
     float docHeight=numLines*lineHeight;
     if(docHeight<=0)return;
-    
     if(showScrollbar&&showMinimap) {
         DrawRectBatch(RIGHT_EDGE-minimapWidth-scrollbarWidth,0,minimapWidth+scrollbarWidth,FULL_HEIGHT,(Color){5,5,8,180});
     } else if(showScrollbar) {
@@ -332,63 +331,45 @@ void DrawScrollbarAndMinimap() {
     } else if(showMinimap) {
         DrawRectBatch(RIGHT_EDGE-minimapWidth,0,minimapWidth,FULL_HEIGHT,(Color){5,5,8,180});
     }
-    
     float visibleRatio=GetVisibleHeightRatio();
     int thumbHeight=fmax(30,FULL_HEIGHT*visibleRatio);
     int maxScroll=MaxScroll();
     float scrollRatio=(maxScroll>0)?fmin(1.0f,fmax(0.0f,scroll.currentY/(float)maxScroll)):0;
     int thumbY=floor(scrollRatio*(FULL_HEIGHT-thumbHeight));
-    
     if(showMinimap) {
         int mmX=RIGHT_EDGE-minimapWidth-(showScrollbar?scrollbarWidth:0);
-        
         float totalDocumentHeight = numLines * lineHeight;
         float minimapScale = FULL_HEIGHT / totalDocumentHeight;
-        
         int maxLen = 0;
         for(int i = 0; i < numLines; i++) {
             if(lines[i].length > maxLen) maxLen = lines[i].length;
         }
         maxLen = fmax(1, maxLen);
-        
         bool hasSel = IsSelValid();
         int selS = 0, selE = 0;
         if(hasSel) {
-            selS = selStartLine < selEndLine || 
-                   (selStartLine == selEndLine && selStartCol < selEndCol) 
-                   ? selStartLine : selEndLine;
-            selE = selStartLine > selEndLine || 
-                   (selStartLine == selEndLine && selStartCol > selEndCol) 
-                   ? selStartLine : selEndLine;
+            selS = selStartLine < selEndLine || (selStartLine == selEndLine && selStartCol < selEndCol) ? selStartLine : selEndLine;
+            selE = selStartLine > selEndLine || (selStartLine == selEndLine && selStartCol > selEndCol) ? selStartLine : selEndLine;
         }
-        
         for(int i = 0; i < numLines; i++) {
             float lineY = floor(((float)i * lineHeight) * minimapScale);
             float lineH = fmax(1.0f, lineHeight * minimapScale);
-            
             int len = lines[i].length;
             float contentWidth = minimapWidth - 4;
-            
-            float lineW = fmax(4.0f, contentWidth * fmin(1.0f, 
-                fmax(0.15f, (float)len / fmax(80.0f, (float)maxLen * 0.8f))
-            ));
-            
+            float lineW = fmax(4.0f, contentWidth * fmin(1.0f, fmax(0.15f, (float)len / fmax(80.0f, (float)maxLen * 0.8f))));
             Color lineColor = {
                 (unsigned char)(textColor.r * 0.5f),
                 (unsigned char)(textColor.g * 0.5f),
                 (unsigned char)(textColor.b * 0.5f),
                 (unsigned char)(100 + fmin(150, len))
             };
-            
             if(hasSel && i >= selS && i <= selE) {
                 lineColor.r = 150;
                 lineColor.g = 120;
                 lineColor.b = 220;
                 lineColor.a = 160;
             }
-            
             DrawRectBatch(mmX + 2, floor(lineY), floor(lineW), ceil(lineH), lineColor);
-            
             if(i == cursorLine) {
                 Color cursorLineColor = {
                     (unsigned char)(textColor.r * 0.6f),
@@ -399,40 +380,28 @@ void DrawScrollbarAndMinimap() {
                 DrawRectBatch(mmX + 2, floor(lineY), floor(lineW), ceil(lineH), cursorLineColor);
             }
         }
-        
         float cursorY = floor(((float)cursorLine * lineHeight) * minimapScale);
         int currentLineLen = lines[cursorLine].length;
         float contentWidth = minimapWidth - 4;
-        
-        float lineW = fmax(4.0f, contentWidth * fmin(1.0f, 
-            fmax(0.15f, (float)currentLineLen / fmax(80.0f, (float)maxLen * 0.8f))
-        ));
-        
-        float xPosRatio = currentLineLen > 0 
-            ? (float)cursorCol / (float)currentLineLen 
-            : 0.0f;
-        
+        float lineW = fmax(4.0f, contentWidth * fmin(1.0f, fmax(0.15f, (float)currentLineLen / fmax(80.0f, (float)maxLen * 0.8f))));
+        float xPosRatio = currentLineLen > 0 ? (float)cursorCol / (float)currentLineLen : 0.0f;
         float dotSizeWidth = fmax(1.0f, (lineHeight / 4) * minimapScale);
         float dotSizeHeight = lineHeight * minimapScale;
         float dotX = mmX + 2 + xPosRatio * lineW;
-        
         dotX = fmax(mmX + 2, fmin(mmX + 2 + lineW - dotSizeWidth, dotX));
-        
         DrawRectBatch(
             dotX, 
             cursorY, 
             dotSizeWidth, 
             dotSizeHeight, 
             (Color){255, 220, 200, 220}
-        );
-        
+        ); 
         float hlY = thumbY;
         float hlH = thumbHeight;
         DrawRectBatch(mmX, hlY, minimapWidth, hlH, (Color){30, 30, 40, 80});
         DrawRectBatch(mmX, hlY, minimapWidth, 1, (Color){100, 100, 120, 120});
         DrawRectBatch(mmX, hlY + hlH - 1, minimapWidth, 1, (Color){100, 100, 120, 120});
     }
-    
     if(showScrollbar) {
         int sbX = RIGHT_EDGE - scrollbarWidth;
         double timeSince = window.time - lastVerticalScrollTime;
@@ -443,7 +412,6 @@ void DrawScrollbarAndMinimap() {
         }
         DrawHorizontalScrollbar();
     }
-    
     FlushRectBatch();
 }
 void UpdateLastScrollTimes() {
