@@ -4,6 +4,7 @@
 Font font;
 Shader shaderfontcursor;
 
+#include "modules/syntax.c"
 #include "modules/editor.c"
 
 int main(int argc, char *argv[]) {
@@ -25,7 +26,7 @@ int main(int argc, char *argv[]) {
 
 // Features
 //  markdown rendering
-//  modline with git dir 
+//  modline with git status
 //  file manager buffer
 //  terminal buffer, pipe commands to buffer
 //  command line with to eval commads inside of the editor
@@ -34,9 +35,10 @@ int main(int argc, char *argv[]) {
 //  timeline of files old 7 days
 //  sudo save using like pkexec
 //  code folding
-//  use paywall colors
+//  use paywall colors and refine colors in modline and minimap
 //  code snippets
 //  unicode support
+//  refine zooming animation to be more smooth and also scrolling
 //  term escape sequences support
 //  jupyter notebooks like cells with whatever interpreter you want
 // External Modules
@@ -45,7 +47,6 @@ int main(int argc, char *argv[]) {
 //  search & replace & regex 
 //  autopair brackets,quotes 
 //  color picker
-//  syntax language mode treesitter highlight
 //  lsp for autocompletion
 //  git info
 //  copilot like ai

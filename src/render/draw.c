@@ -32,8 +32,8 @@ static bool rectIndicesInitialized = false;
 
 void DrawRectBatch(int x, int y, int width, int height, Color color) {
     if (color.a == 0) color.a = 255;
-    if (rectBatchCount >= MAX_BATCH_RECTS) {
-        FlushRectBatch();
+    if (rectBatchCount >= MAX_BATCH_RECTS - 1) {
+        FlushTextBatch();
     }
     if (!rectIndicesInitialized) {
         for (int i = 0; i < MAX_BATCH_RECTS; i++) {
