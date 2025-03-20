@@ -50,16 +50,37 @@ void InsertChar(char c) {
 }
 void DeleteChar() {
     if (cursorCol > 0) {
-        memmove(&lines[cursorLine].text[cursorCol-1], &lines[cursorLine].text[cursorCol], lines[cursorLine].length - cursorCol + 1);
+        memmove(&lines[cursorLine].text[cursorCol-1], &lines[cursorLine].text[cursorCol], 
+                lines[cursorLine].length - cursorCol + 1);
         lines[cursorLine].length--;
         cursorCol--;
         isFileDirty = true;
     } else if (cursorLine > 0) {
-        cursorCol = lines[cursorLine-1].length;
-        strcat(lines[cursorLine-1].text, lines[cursorLine].text);
-        lines[cursorLine-1].length += lines[cursorLine].length;
+        int prevLineLen = lines[cursorLine-1].length;
+        int currLineLen = lines[cursorLine].length;
+        
+        // Check if combined line will fit in buffer
+        if (prevLineLen + currLineLen >= MAXTEXT) {
+            // If it won't fit, copy as much as possible
+            int spaceLeft = MAXTEXT - 1 - prevLineLen;
+            if (spaceLeft > 0) {
+                strncat(lines[cursorLine-1].text, lines[cursorLine].text, spaceLeft);
+                lines[cursorLine-1].length += spaceLeft;
+            }
+        } else {
+            // Safe to join lines
+            strcat(lines[cursorLine-1].text, lines[cursorLine].text);
+            lines[cursorLine-1].length += lines[cursorLine].length;
+        }
+        
+        cursorCol = prevLineLen;
         free(lines[cursorLine].text);
-        memmove(&lines[cursorLine], &lines[cursorLine+1], (numLines-cursorLine-1) * sizeof(Line));
+        
+        // Shift remaining lines up
+        for (int i = cursorLine + 1; i < numLines; i++) {
+            lines[i-1] = lines[i];
+        }
+        
         numLines--;
         cursorLine--;
         isFileDirty = true;
@@ -171,22 +192,46 @@ void DeleteSelection() {
     if (selStartLine == -1 || selEndLine == -1) return;
     int startLine = selStartLine, startCol = selStartCol;
     int endLine = selEndLine, endCol = selEndCol;
+    
+    // Ensure start comes before end
     if (startLine > endLine || (startLine == endLine && startCol > endCol)) {
         int tl = startLine, tc = startCol;
         startLine = endLine; startCol = endCol;
         endLine = tl; endCol = tc;
     }
+    
     if (startLine == endLine) {
-        memmove(&lines[startLine].text[startCol], &lines[startLine].text[endCol], lines[startLine].length - endCol + 1);
+        // Single line selection
+        memmove(&lines[startLine].text[startCol], &lines[startLine].text[endCol], 
+                lines[startLine].length - endCol + 1);
         lines[startLine].length -= (endCol - startCol);
     } else {
-        strncat(lines[startLine].text + startCol, lines[endLine].text + endCol, MAXTEXT - startCol - 1);
-        lines[startLine].length = startCol + strlen(lines[endLine].text + endCol);
+        // Check if combined text fits in buffer
+        size_t endLineRemaining = strlen(lines[endLine].text + endCol);
+        if (startCol + endLineRemaining >= MAXTEXT) {
+            // If it doesn't fit, just truncate at selection start
+            lines[startLine].text[startCol] = '\0';
+            lines[startLine].length = startCol;
+        } else {
+            // Combine first and last line of selection
+            strcpy(lines[startLine].text + startCol, lines[endLine].text + endCol);
+            lines[startLine].length = startCol + endLineRemaining;
+        }
+        
+        // Free memory for deleted lines
+        for (int i = startLine + 1; i <= endLine; i++) {
+            free(lines[i].text);
+        }
+        
+        // Shift remaining lines up
         int linesToRemove = endLine - startLine;
-        for (int i = endLine + 1; i < numLines; i++)
-            lines[i - linesToRemove] = lines[i];  
+        for (int i = endLine + 1; i < numLines; i++) {
+            lines[i - linesToRemove] = lines[i];
+        }
+        
         numLines -= linesToRemove;
     }
+    
     cursorLine = startLine;
     cursorCol = startCol;
     selStartLine = selStartCol = selEndLine = selEndCol = -1;
@@ -493,22 +538,36 @@ void DrawModeline() {
 }
 void InsertNewline() {
     if (numLines >= MAXTEXT) return;
-    memmove(&lines[cursorLine+1], &lines[cursorLine], (numLines - cursorLine) * sizeof(Line));
-    numLines++;
-    InitLine(cursorLine + 1);
-    strcpy(lines[cursorLine+1].text, &lines[cursorLine].text[cursorCol]);
+    
+    // Allocate new line first
+    InitLine(numLines); // Initialize a new line at the end
+    
+    // Shift lines down, starting from the end to avoid overwriting
+    for (int i = numLines; i > cursorLine + 1; i--) {
+        lines[i] = lines[i-1];
+    }
+    
+    // Set up the new line's content (split the current line)
     lines[cursorLine+1].length = lines[cursorLine].length - cursorCol;
+    memcpy(lines[cursorLine+1].text, &lines[cursorLine].text[cursorCol], lines[cursorLine+1].length + 1);
+    
+    // Truncate the current line
     lines[cursorLine].text[cursorCol] = '\0';
     lines[cursorLine].length = cursorCol;
+    
+    numLines++;
     cursorLine++;
     cursorCol = 0;
     scroll.targetX = 0;
+    
+    // Update scrolling to keep cursor in view
     int visibleHeight = window.screen_height - (showStatusBar ? statusBarHeight : 0);
     int newLineY = cursorLine * lineHeight;
     int cursorViewPosition = newLineY - scroll.currentY;
     if (cursorViewPosition < 0 || cursorViewPosition >= visibleHeight)
         scroll.targetY = newLineY - (visibleHeight / 2);
     scroll.targetY = fmax(0, fmin(MaxScroll(), scroll.targetY));
+    
     UpdateGutterWidth();
     isFileDirty = true;
 }
