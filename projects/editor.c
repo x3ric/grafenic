@@ -24,7 +24,6 @@ int main(int argc, char *argv[]) {
 }
 
 // Features
-//  line wrapping
 //  markdown rendering
 //  modline with git dir 
 //  file manager buffer
@@ -35,6 +34,7 @@ int main(int argc, char *argv[]) {
 //  timeline of files old 7 days
 //  sudo save using like pkexec
 //  code folding
+//  use paywall colors
 //  code snippets
 //  unicode support
 //  term escape sequences support
