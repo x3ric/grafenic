@@ -588,7 +588,6 @@ void DrawScrollbarAndMinimap() {
         }
         DrawHorizontalScrollbar();
     }
-    
     FlushRectBatch();
 }
 void DrawModeline() {
@@ -1410,6 +1409,8 @@ void Draw() {
     UpdateScroll(window.deltatime);
     DrawEditor();
     DrawLineNumbers();
+    FlushRectBatch();
+    FlushTextBatch();
     DrawHorizontalScrollbar();
     DrawScrollbarAndMinimap();
     DrawModeline();
