@@ -421,7 +421,6 @@ void DrawLineNumbers() {
         DrawTextBatch(tx, ty, font, fontSize, num, color);
     }
     FlushRectBatch();
-    FlushTextBatch();
 }
 float GetDocumentHeight() { return (wordWrap ? numWrappedLines : numLines) * lineHeight; }
 float GetVisibleHeightRatio() {
@@ -940,7 +939,6 @@ void DrawEditor() {
                 if (clampedCol < lineLength) {
                     char currentChar[2] = {lineText[clampedCol], '\0'};
                     DrawTextBatch(cursorX, lineY, font, fontSize, currentChar, (Color){0,0,0,255});
-                    FlushTextBatch();
                 }
             } else {
                 int intCharWidth = (int)charWidth;
