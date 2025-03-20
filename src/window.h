@@ -512,6 +512,7 @@ void WindowClose();
     Font SetFontSize(Font font, float fontSize);
     void PreloadFontSizes(Font font);
     TextSize GetTextSize(Font font, float fontSize, const char* text);
+    TextSize GetTextSizeCached(Font font, float fontSize, const char* text);
     void RenderShaderText(ShaderObject obj, Color color, float fontSize);
     void DrawText(int x, int y, Font font, float fontSize, const char* text, Color color);
     void DrawTextBatch(int x, int y, Font font, float fontSize, const char* text, Color color);

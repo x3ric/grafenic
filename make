@@ -84,8 +84,15 @@ build() {
     fi
     CFLAGS="-I./deps -I./projects"
     export LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
-    echo -e "$CC $CFLAGS \"\$(pkg-config --cflags freetype2)\" $SOURCES -o $TARGET -lgrafenic $LDFLAGS"
-    $CC $CFLAGS $FREETYPE $SOURCES -o $TARGET -lgrafenic $LDFLAGS
+    if [ "$SOURCES" == "./projects/editor.c" ]; then
+        need tree-sitter
+        need tree-sitter-c
+        echo -e "$CC $CFLAGS \$(pkg-config --cflags freetype2) $SOURCES -o $TARGET \$(pkg-config --libs tree-sitter) -ldl -lgrafenic $LDFLAGS"
+        $CC $CFLAGS $FREETYPE $SOURCES -o $TARGET $(pkg-config --libs tree-sitter) -lgrafenic $LDFLAGS
+    else
+        echo -e "$CC $CFLAGS \$(pkg-config --cflags freetype2) $SOURCES -o $TARGET -ldl -lgrafenic $LDFLAGS"
+        $CC $CFLAGS $FREETYPE $SOURCES -o $TARGET -lgrafenic $LDFLAGS
+    fi
 }
 
 run() {

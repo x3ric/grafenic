@@ -256,7 +256,7 @@ typedef struct {
 
 typedef struct {
     TextBatch batches[MAX_BATCH_CALLS];
-    int activeBatchCount;
+    int activetextBatchCount;
     bool batchingEnabled;
 } TextRenderState;
 
@@ -384,6 +384,18 @@ TextSize GetTextSize(Font font, float fontSize, const char* text) {
         }
     }
     return size;
+}
+
+TextSize GetTextSizeCached(Font font, float fontSize, const char* text) {
+    static TextSize cachedSize;
+    static char lastText[64] = "";
+    static float lastSize = 0;
+    if (fontSize == lastSize && strcmp(text, lastText) == 0 && strlen(text) < 63)
+        return cachedSize;
+    cachedSize = GetTextSize(font, fontSize, text);
+    lastSize = fontSize;
+    strncpy(lastText, text, 63);
+    return cachedSize;
 }
 
 void RenderShaderText(ShaderObject obj, Color color, float fontSize) {
@@ -545,19 +557,19 @@ typedef struct {
 
 static BatchChar charBatch[MAX_BATCH_CHARS];
 static GLuint batchIndices[MAX_BATCH_CHARS * 6];
-static int batchCount = 0;
+static int textBatchCount = 0;
 static GLuint currentTextureID = 0;
 static float currentFontSize = 0;
 
 void FlushTextBatch() {
-    if (batchCount == 0) return;
+    if (textBatchCount == 0) return;
     glBindTexture(GL_TEXTURE_2D, currentTextureID);
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     int startChar = 0;
     Color currentColor = charBatch[0].color;
-    for (int i = 1; i <= batchCount; i++) {
-        bool colorChanged = i == batchCount || 
+    for (int i = 1; i <= textBatchCount; i++) {
+        bool colorChanged = i == textBatchCount || 
             memcmp(&charBatch[i].color, &currentColor, sizeof(Color)) != 0;
         if (colorChanged) {
             int charCount = i - startChar;
@@ -570,13 +582,13 @@ void FlushTextBatch() {
                 charCount * 20 * sizeof(GLfloat), 
                 charCount * 6 * sizeof(GLuint),
                 camera.transform}, currentColor, currentFontSize);
-            if (i < batchCount) {
+            if (i < textBatchCount) {
                 startChar = i;
                 currentColor = charBatch[i].color;
             }
         }
     }
-    batchCount = 0;
+    textBatchCount = 0;
     glBindTexture(GL_TEXTURE_2D, 0);
     glDisable(GL_BLEND);
 }
@@ -585,7 +597,9 @@ void DrawTextBatch(int x, int y, Font font, float fontSize, const char* text, Co
     if (!font.face || !font.textureID) return;
     if (fontSize <= 1.0f) fontSize = 1.0f;
     if (color.a == 0) color.a = 255;
-    if (currentTextureID != 0 && (currentTextureID != font.textureID || currentFontSize != fontSize)) {
+    if (textBatchCount >= MAX_BATCH_CHARS - 1 || 
+        currentTextureID != font.textureID || 
+        currentFontSize != fontSize) {
         FlushTextBatch();
     }
     currentTextureID = font.textureID;
@@ -610,8 +624,8 @@ void DrawTextBatch(int x, int y, Font font, float fontSize, const char* text, Co
         indicesInitialized = true;
     }
     for (size_t i = 0; text[i] != '\0'; ++i) {
-        if (text[i] == '\n' || batchCount >= MAX_BATCH_CHARS) {
-            if (batchCount > 0) {
+        if (text[i] == '\n' || textBatchCount >= MAX_BATCH_CHARS) {
+            if (textBatchCount > 0) {
                 FlushTextBatch();
             }
             if (text[i] == '\n') {
@@ -627,7 +641,7 @@ void DrawTextBatch(int x, int y, Font font, float fontSize, const char* text, Co
         float y_start = ypos - glyph->yoff * scale;
         float w = (glyph->x1 - glyph->x0) * scale;
         float h = (glyph->y1 - glyph->y0) * scale;
-        BatchChar* ch = &charBatch[batchCount];
+        BatchChar* ch = &charBatch[textBatchCount];
         ch->color = color;
         // Bottom left
         ch->vertices[0] = x_start;
@@ -654,7 +668,7 @@ void DrawTextBatch(int x, int y, Font font, float fontSize, const char* text, Co
         ch->vertices[18] = glyph->u0;
         ch->vertices[19] = glyph->v0;
         // End
-        batchCount++;
+        textBatchCount++;
         xpos += glyph->xadvance * scale;
     }
 }
