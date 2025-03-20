@@ -36,8 +36,11 @@ int main(int argc, char *argv[]) {
 //  sudo save using like pkexec
 //  code folding
 //  code snippets
+//  unicode support
+//  term escape sequences support
 //  jupyter notebooks like cells with whatever interpreter you want
 // External Modules
+//  debugger like to debug itself and change variables introspectivly
 //  diff folder,clipboard,git,timeline
 //  search & replace & regex 
 //  autopair brackets,quotes 
