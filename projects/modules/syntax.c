@@ -1,16 +1,15 @@
-
 #include <ctype.h>
 #include <dlfcn.h>
 #include <dirent.h>
 #include <tree_sitter/api.h>
+#include <stdlib.h>
+#include <string.h>
+#include <stdbool.h>
+#include <stdint.h>
 
 // Compile with $(pkg-config --libs tree-sitter)
 
-typedef struct {
-    unsigned char r, g, b, a;
-} SyntaxColor;
-
-typedef void (*DrawTextFunc)(float x, float y, void* font, float fontSize, const char* text, SyntaxColor color, void* userData);
+typedef void (*DrawTextFunc)(float x, float y, void* font, float fontSize, const char* text, Color color, void* userData);
 
 typedef struct {
     const char *name;                 // Language name
@@ -19,30 +18,42 @@ typedef struct {
     const TSLanguage *(*func)(void);  // Function pointer to get language
 } LanguageLib;
 
-typedef struct {
-    const char *nodeName;
-    SyntaxColor color;
-} ColorMap;
+#define FNV_PRIME_32 16777619
+#define FNV_OFFSET_32 2166136261U
 
 typedef struct {
-    SyntaxColor *colors;         // Color array for text
-    int maxColors;               // Max size of color array
-    bool initialized;            // Initialization flag
-    TSParser *parser;            // Tree-sitter parser
-    TSTree *tree;                // Parsed syntax tree
-    char *lastText;              // Last parsed text cache
-    int lastTextLen;             // Length of cached text
-    const char *language;        // Current language name
-    LanguageLib *languages;      // Available languages
-    int numLanguages;            // Number of languages
-    SyntaxColor defaultColor;    // Default text color
-    DrawTextFunc drawFunc;       // Function to draw text
-    void* fontPtr;               // Font pointer for drawing
-    float fontSize;              // Font size for drawing
-    void *userData;              // User data for draw function
-    ColorMap *colorMap;          // Node type to color mapping
-    int numColors;               // Number of color mappings
-    bool debugMode;              // Enable debug output
+    const char *key;
+    Color value;
+    uint32_t hash;
+    bool used;
+} NodeColorEntry;
+
+typedef struct {
+    NodeColorEntry *entries;
+    size_t capacity;
+    size_t size;
+    float load_factor;
+    size_t threshold;
+} NodeColorMap;
+
+typedef struct {
+    Color *colors;          // Color array for text
+    int maxColors;          // Max size of color array
+    bool initialized;       // Initialization flag
+    TSParser *parser;       // Tree-sitter parser
+    TSTree *tree;           // Parsed syntax tree
+    char *lastText;         // Last parsed text cache
+    int lastTextLen;        // Length of cached text
+    const char *language;   // Current language name
+    LanguageLib *languages; // Available languages
+    int numLanguages;       // Number of languages
+    Color defaultColor;     // Default text color
+    DrawTextFunc drawFunc;  // Function to draw text
+    void* fontPtr;          // Font pointer for drawing
+    float fontSize;         // Font size for drawing
+    void *userData;         // User data for draw function
+    NodeColorMap colorMap;  // Node type to color mapping
+    bool debugMode;         // Enable debug output
 } SyntaxHighlighter;
 
 static SyntaxHighlighter highlighter = {0};
@@ -81,61 +92,186 @@ static LanguageLib defaultLanguages[MAX_LANGUAGES] = {
     {"kotlin", ".kt,.kts", NULL, NULL}
 };
 
-#define MAX_COLOR_MAPPINGS 50
-static ColorMap defaultColorMap[MAX_COLOR_MAPPINGS] = {
-    {"comment", {100, 200, 100, 255}},             // Green for comments
-    {"string", {230, 180, 80, 255}},               // Yellow for strings
-    {"raw_string", {230, 180, 80, 255}},           // Yellow for raw strings
-    {"string_literal", {230, 180, 80, 255}},       // Yellow for string literals
-    {"string_content", {230, 180, 80, 255}},       // Yellow for string content
-    {"escape_sequence", {240, 150, 120, 255}},     // Orange for escape sequences
-    {"char", {230, 180, 80, 255}},                 // Yellow for chars
-    {"character", {230, 180, 80, 255}},            // Yellow for characters
-    {"number", {240, 150, 120, 255}},              // Orange for numbers
-    {"float", {240, 150, 120, 255}},               // Orange for floats
-    {"integer", {240, 150, 120, 255}},             // Orange for integers
-    {"boolean", {240, 150, 120, 255}},             // Orange for booleans
-    {"keyword", {130, 180, 255, 255}},             // Blue for keywords
-    {"type", {100, 200, 230, 255}},                // Cyan for types
-    {"type_identifier", {100, 200, 230, 255}},     // Cyan for type identifiers
-    {"primitive_type", {100, 200, 230, 255}},      // Cyan for primitive types
-    {"function", {220, 150, 220, 255}},            // Purple for functions
-    {"function_definition", {220, 150, 220, 255}}, // Purple for function definitions
-    {"function_call", {220, 150, 220, 255}},       // Purple for function calls
-    {"method", {220, 150, 220, 255}},              // Purple for methods
-    {"method_call", {220, 150, 220, 255}},         // Purple for method calls
-    {"property", {200, 200, 160, 255}},            // Tan for properties
-    {"field", {200, 200, 160, 255}},               // Tan for fields
-    {"variable", {220, 220, 220, 255}},            // White for variables
-    {"identifier", {220, 220, 220, 255}},          // White for identifiers
-    {"operator", {230, 150, 150, 255}},            // Red for operators
-    {"punctuation", {200, 200, 200, 255}},         // Light grey for punctuation
-    {"delimiter", {200, 200, 200, 255}},           // Light grey for delimiters
-    {"bracket", {200, 200, 200, 255}},             // Light grey for brackets
-    {"tag", {150, 220, 180, 255}},                 // Green for tags (HTML/XML)
-    {"attribute", {180, 200, 140, 255}},           // Olive for attributes
-    {"special", {255, 128, 128, 255}},             // Bright red for special items
-    {"error", {255, 100, 100, 255}},               // Red for errors
-    {"preprocessor", {200, 140, 140, 255}},        // Pinkish for preprocessor
-    {"include", {200, 140, 140, 255}},             // Pinkish for includes
-    {"define", {200, 140, 140, 255}},              // Pinkish for defines
-    {"directive", {200, 140, 140, 255}},           // Pinkish for directives
-    {"macro", {200, 140, 140, 255}},               // Pinkish for macros
-    {"constant", {180, 180, 240, 255}},            // Light blue for constants
-    {"namespace", {180, 210, 210, 255}},           // Light cyan for namespaces
-    {"class", {100, 200, 230, 255}},               // Cyan for classes
-    {"decorator", {190, 180, 220, 255}},           // Light purple for decorators
-    {"annotation", {190, 180, 220, 255}},          // Light purple for annotations
-    {"parameter", {210, 190, 170, 255}},           // Tan for parameters
-    {"argument", {210, 190, 170, 255}},            // Tan for arguments
-    {"regex", {210, 160, 200, 255}},               // Pink for regex
-    {"regexp", {210, 160, 200, 255}},              // Pink for regexp
-    {"symbol", {200, 200, 120, 255}},              // Yellow for symbols
-    {"label", {200, 200, 120, 255}},               // Yellow for labels
-    {NULL, {220, 220, 220, 255}}                   // Default text color (terminator)
+#define Color00 (Color){  57,  53,  80, 255 } // #393550
+#define Color01 (Color){ 197, 163, 224, 255 } // #C5A3E0
+#define Color02 (Color){ 144, 184, 209, 255 } // #90B8D1
+#define Color03 (Color){ 154, 196, 226, 255 } // #9AC4E2
+#define Color04 (Color){ 168, 241, 245, 255 } // #A8F1F5
+#define Color05 (Color){ 194, 192, 235, 255 } // #C2C0EB
+#define Color06 (Color){ 226, 186, 248, 255 } // #E2BAF8
+#define Color07 (Color){ 218, 233, 245, 255 } // #DAE9F5
+#define Color08 (Color){ 179, 195, 201, 255 } // #B3C3C9
+#define Color09 (Color){ 198, 165, 225, 255 } // #C6A5E1
+#define Color10 (Color){ 145, 185, 210, 255 } // #91B9D2
+#define Color11 (Color){ 154, 191, 224, 255 } // #9ABFE0
+#define Color12 (Color){ 169, 241, 246, 255 } // #A9F1F6
+#define Color13 (Color){ 195, 194, 236, 255 } // #C3C2ED
+#define Color14 (Color){ 227, 188, 249, 255 } // #E3BCF9
+#define Color15 (Color){ 219, 235, 246, 255 } // #DBEBF6
+
+#define Color16 (Color){ 80,  144, 62,  255 } // #50903E
+#define Color17 (Color){ 205, 92,  92,  255 } // #CD5C5C
+#define Color18 (Color){ 255, 204, 51,  255 } // #FFCC33
+#define Color19 (Color){ 255, 99,  71,  255 } // #FF6347
+#define Color20 (Color){ 50,  205, 50,  255 } // #32CD32
+#define Color21 (Color){ 255, 69,  0,   255 } // #FF4500
+#define Color22 (Color){ 70,  130, 180, 255 } // #4682B4
+#define Color23 (Color){ 255, 105, 180, 255 } // #FF69B4
+#define Color24 (Color){ 0,   128, 128, 255 } // #008080
+#define Color25 (Color){ 138, 43,  226, 255 } // #8A2BE2
+#define Color26 (Color){ 34,  139, 34,  255 } // #228B22
+#define Color27 (Color){ 186, 85,  211, 255 } // #BA55D3
+#define Color28 (Color){ 255, 215, 0,   255 } // #FFD700
+#define Color29 (Color){ 255, 20,  147, 255 } // #FF1493
+#define Color30 (Color){ 20,  18,  30,  255 } // #14121E
+
+typedef struct {
+    const char *nodeName;
+    Color color;
+} ColorMapping;
+
+static const ColorMapping initialColorMappings[] = {
+    {"comment", Color00},
+    {"string", Color01},
+    {"number", Color02},
+    {"keyword", Color03},
+    {"type", Color04},
+    {"function", Color05},
+    {"property", Color06},
+    {"variable", Color07},
+    {"operator", Color08},
+    {"punctuation", Color09},
+    {"struct", Color10},
+    {"param", Color11},
+    {"preproc", Color12},
+    {"constant", Color13},
+    {"namespace", Color14},
+    {"highlight", Color15},
+    {NULL, {0, 0, 0, 0}}
 };
 
-#define COPY_COLOR(dst, src) do { \
+static inline uint32_t hash_string(const char *str) {
+    uint32_t hash = FNV_OFFSET_32;
+    for (const unsigned char *s = (const unsigned char *)str; *s; s++) {
+        hash ^= *s;
+        hash *= FNV_PRIME_32;
+    }
+    return hash;
+}
+
+static bool InitNodeColorMap(NodeColorMap *map, size_t capacity) {
+    size_t actual_capacity = 16;
+    while (actual_capacity < capacity) actual_capacity <<= 1;
+    map->entries = (NodeColorEntry*)calloc(actual_capacity, sizeof(NodeColorEntry));
+    if (!map->entries) return false;
+    map->capacity = actual_capacity;
+    map->size = 0;
+    map->load_factor = 0.75f;
+    map->threshold = (size_t)(actual_capacity * map->load_factor);
+    return true;
+}
+
+static inline size_t FindSlot(NodeColorMap *map, const char *key, uint32_t hash) {
+    size_t mask = map->capacity - 1;
+    size_t index = hash & mask;
+    while (true) {
+        NodeColorEntry *entry = &map->entries[index];
+        if (!entry->used) {
+            return index;
+        } else if (entry->hash == hash && strcmp(entry->key, key) == 0) {
+            return index;
+        }
+        index = (index + 1) & mask;
+    }
+}
+
+static bool ResizeColorMap(NodeColorMap *map, size_t new_capacity) {
+    NodeColorEntry *old_entries = map->entries;
+    size_t old_capacity = map->capacity;
+    if (!InitNodeColorMap(map, new_capacity)) return false;
+    for (size_t i = 0; i < old_capacity; i++) {
+        NodeColorEntry *entry = &old_entries[i];
+        if (entry->used) {
+            size_t index = FindSlot(map, entry->key, entry->hash);
+            map->entries[index] = *entry;
+            map->size++;
+        }
+    }
+    free(old_entries);
+    return true;
+}
+
+static bool AddNodeColor(NodeColorMap *map, const char *nodeName, Color color) {
+    if (!map || !nodeName) return false;
+    if (map->size >= map->threshold) {
+        if (!ResizeColorMap(map, map->capacity * 2)) return false;
+    }
+    uint32_t hash = hash_string(nodeName);
+    size_t index = FindSlot(map, nodeName, hash);
+    NodeColorEntry *entry = &map->entries[index];
+    if (!entry->used) {
+        map->size++;
+    }
+    entry->key = nodeName;
+    entry->value = color;
+    entry->hash = hash;
+    entry->used = true;
+    return true;
+}
+
+static Color GetNodeColor(NodeColorMap *map, const char *nodeName, Color defaultColor) {
+    if (!map || !nodeName) return defaultColor;
+    uint32_t hash = hash_string(nodeName);
+    size_t mask = map->capacity - 1;
+    size_t index = hash & mask;
+    size_t startIndex = index;
+    do {
+        NodeColorEntry *entry = &map->entries[index];
+        if (!entry->used) {
+            return defaultColor;
+        } else if (entry->hash == hash && strcmp(entry->key, nodeName) == 0) {
+            return entry->value;
+        }
+        index = (index + 1) & mask;
+    } while (index != startIndex);
+    return defaultColor;
+}
+
+static void InitColorMap(NodeColorMap *map) {
+    for (int i = 0; initialColorMappings[i].nodeName; i++) 
+        AddNodeColor(map, initialColorMappings[i].nodeName, initialColorMappings[i].color);
+    struct { const char *types[32]; Color color; } typeMappings[] = {
+        { {"line_comment", "block_comment", "doc_comment", "documentation_comment", "javadoc", "comment_block", "comment_line", NULL}, Color00 },
+        { {"string_literal", "string_content", "raw_string", "char", "character_literal", "heredoc", "template_string", "f_string", "escape_sequence", "escaped_character", NULL}, Color01 },
+        { {"integer", "integer_literal", "float", "float_literal", "numeric_literal", "decimal", "hex", "octal", "binary", "boolean", "true", "false", NULL}, Color02 },
+        { {"type_identifier", "primitive_type", "builtin_type", "type_definition", "template", "type_annotation", "class_definition", "trait", "protocol", NULL}, Color03 },
+        { {"function_definition", "function_declaration", "function_call", "call_expression", "method_call", "lambda_expression", NULL}, Color04 },
+        { {"struct", "enum", "union", "struct_definition", "enum_definition", NULL}, Color05 },
+        { {"property_identifier", "field_identifier", "member_access", "member_expression", NULL}, Color06 },
+        { {"variable_declaration", "var_declaration", "identifier", NULL}, Color07 },
+        { {"assignment", "assignment_operator", "arithmetic_operator", "comparison_operator", "logical_operator", NULL}, Color08 },
+        { {"delimiter", "bracket", "semicolon", "comma", NULL}, Color09 },
+        { {"namespace_definition", "module", "package", "import", "export", "using", NULL}, Color10 },
+        { {"include", "preproc_ifdef", "preproc_ifndef", "preproc_def", "preproc_if", "preproc_else", "preproc_endif", NULL}, Color11 },
+        { {"public", "private", "protected", "static", "final", "abstract", "virtual", "const", "mutable", NULL}, Color12 },
+        { {"function", "method", "constructor", "destructor", "lambda", "arrow_function", "call_expression", NULL}, Color05 },
+        { {"property", "field", "member", "property_identifier", "field_identifier", NULL}, Color06 },
+        { {"variable", "identifier", "var_declaration", "variable_definition", NULL}, Color07 },
+        { {"operator", "assignment", "arithmetic_operator", "comparison_operator", "logical_operator", "bitwise_operator", NULL}, Color08 },
+        { {"punctuation", "delimiter", "bracket", "semicolon", "comma", NULL}, Color09 },
+        { {"argument", "parameter", "parameters", "formal_parameter", "parameter_list", "self", "this", NULL}, Color10 },
+        { {"namespace", "module", "package", "import", "export", "using", NULL}, Color11 },
+        { {"preprocessor", "include", "define", "ifdef", "ifndef", "endif", "preproc_directive", NULL}, Color12 },
+        { {"constant", "const", "constexpr", "enum_item", "static_const", NULL}, Color13 },
+        { {"macro", "directive", "annotation", "decorator", NULL}, Color14 },
+        { {"highlight", "focus", "selection", NULL}, Color15 }
+    };
+    for (size_t i = 0; i < sizeof(typeMappings) / sizeof(typeMappings[0]); i++) 
+        for (int j = 0; typeMappings[i].types[j]; j++) 
+            AddNodeColor(map, typeMappings[i].types[j], typeMappings[i].color);
+}
+
+#define COPY_Color(dst, src) do { \
     (dst).r = (src).r; \
     (dst).g = (src).g; \
     (dst).b = (src).b; \
@@ -144,7 +280,9 @@ static ColorMap defaultColorMap[MAX_COLOR_MAPPINGS] = {
 
 static bool LoadLanguage(LanguageLib *lib) {
     if (lib->handle) return true;
-    printf("Attempting to load language: %s\n", lib->name);
+    if (highlighter.debugMode) {
+        printf("Loading language: %s\n", lib->name);
+    }
     const char *paths[] = {
         "/usr/lib/tree-sitter/libtree-sitter-%s.so",
         "/usr/local/lib/tree-sitter/libtree-sitter-%s.so",
@@ -156,28 +294,31 @@ static bool LoadLanguage(LanguageLib *lib) {
     for (int i = 0; i < sizeof(paths)/sizeof(paths[0]); i++) {
         char libPath[512];
         snprintf(libPath, sizeof(libPath), paths[i], lib->name);
-        printf("  Trying: %s\n", libPath);
         lib->handle = dlopen(libPath, RTLD_LAZY);
         if (lib->handle) {
-            printf("  Successfully loaded: %s\n", libPath);
+            if (highlighter.debugMode) {
+                printf("  Successfully loaded: %s\n", libPath);
+            }
             break;
         }
     }
     if (!lib->handle) {
-        printf("  ERROR: Failed to load library for %s: %s\n", lib->name, dlerror());
+        if (highlighter.debugMode) {
+            printf("  Failed to load library for %s: %s\n", lib->name, dlerror());
+        }
         return false;
     }
     char funcName[128];
     snprintf(funcName, sizeof(funcName), "tree_sitter_%s", lib->name);
-    printf("  Looking for function: %s\n", funcName);
     lib->func = (const TSLanguage *(*)(void))dlsym(lib->handle, funcName);
     if (!lib->func) {
-        printf("  ERROR: Failed to find function %s: %s\n", funcName, dlerror());
+        if (highlighter.debugMode) {
+            printf("  Failed to find function %s: %s\n", funcName, dlerror());
+        }
         dlclose(lib->handle);
         lib->handle = NULL;
         return false;
     }
-    printf("  SUCCESS: Language %s loaded and ready\n", lib->name);
     return true;
 }
 
@@ -189,7 +330,7 @@ static LanguageLib *FindLanguageByExtension(const char *filename) {
         LanguageLib *lib = &highlighter.languages[i];
         if (!lib->name) continue;
         char extensions[128];
-        strncpy(extensions, lib->extensions, sizeof(extensions));
+        strncpy(extensions, lib->extensions, sizeof(extensions) - 1);
         extensions[sizeof(extensions) - 1] = '\0';
         char *saveptr;
         char *token = strtok_r(extensions, ",", &saveptr);
@@ -203,21 +344,26 @@ static LanguageLib *FindLanguageByExtension(const char *filename) {
     return NULL;
 }
 
-static SyntaxColor GetColorForNodeType(const char *type) {
+static Color GetColorForNodeType(const char *type) {
     if (!type) return highlighter.defaultColor;
-    for (int i = 0; i < highlighter.numColors; i++) {
-        if (!highlighter.colorMap[i].nodeName) break;
-        if (strstr(type, highlighter.colorMap[i].nodeName)) {
-            return highlighter.colorMap[i].color;
+    Color color = GetNodeColor(&highlighter.colorMap, type, highlighter.defaultColor);
+    if (memcmp(&color, &highlighter.defaultColor, sizeof(Color)) != 0) {
+        return color;
+    }
+    size_t mask = highlighter.colorMap.capacity - 1;
+    for (size_t i = 0; i < highlighter.colorMap.capacity; i++) {
+        NodeColorEntry *entry = &highlighter.colorMap.entries[i];
+        if (entry->used && entry->key && strstr(type, entry->key)) {
+            return entry->value;
         }
     }
     return highlighter.defaultColor;
 }
 
-static void ApplyNodeHighlighting(TSNode node, int startOffset) {
+static void ApplyNodeHighlighting(TSNode node) {
     if (ts_node_is_null(node)) return;
     const char *type = ts_node_type(node);
-    SyntaxColor color = GetColorForNodeType(type);
+    Color color = GetColorForNodeType(type);
     uint32_t startByte = ts_node_start_byte(node);
     uint32_t endByte = ts_node_end_byte(node);
     for (uint32_t i = startByte; i < endByte && i < highlighter.lastTextLen; i++) {
@@ -226,11 +372,11 @@ static void ApplyNodeHighlighting(TSNode node, int startOffset) {
     uint32_t childCount = ts_node_child_count(node);
     for (uint32_t i = 0; i < childCount; i++) {
         TSNode child = ts_node_child(node, i);
-        ApplyNodeHighlighting(child, startOffset);
+        ApplyNodeHighlighting(child);
     }
 }
 
-bool SyntaxInit(SyntaxColor defaultColor, DrawTextFunc drawFunc, void* fontPtr, float fontSize, void *userData) {
+bool SyntaxInit(Color defaultColor, DrawTextFunc drawFunc, void* fontPtr, float fontSize, void *userData) {
     if (highlighter.initialized) return true;
     highlighter.parser = ts_parser_new();
     if (!highlighter.parser) return false;
@@ -241,13 +387,13 @@ bool SyntaxInit(SyntaxColor defaultColor, DrawTextFunc drawFunc, void* fontPtr, 
     highlighter.userData = userData;
     highlighter.debugMode = false;
     highlighter.maxColors = 65536;
-    highlighter.colors = (SyntaxColor*)calloc(highlighter.maxColors, sizeof(SyntaxColor));
+    highlighter.colors = (Color*)calloc(highlighter.maxColors, sizeof(Color));
     if (!highlighter.colors) {
         ts_parser_delete(highlighter.parser);
         return false;
     }
     for (int i = 0; i < highlighter.maxColors; i++) {
-        COPY_COLOR(highlighter.colors[i], defaultColor);
+        COPY_Color(highlighter.colors[i], defaultColor);
     }
     highlighter.numLanguages = MAX_LANGUAGES;
     highlighter.languages = (LanguageLib*)calloc(highlighter.numLanguages, sizeof(LanguageLib));
@@ -262,23 +408,13 @@ bool SyntaxInit(SyntaxColor defaultColor, DrawTextFunc drawFunc, void* fontPtr, 
         highlighter.languages[i].handle = NULL;
         highlighter.languages[i].func = NULL;
     }
-    int colorCount = 0;
-    while (colorCount < MAX_COLOR_MAPPINGS && defaultColorMap[colorCount].nodeName) {
-        colorCount++;
-    }
-    colorCount++;
-    highlighter.colorMap = (ColorMap*)calloc(colorCount, sizeof(ColorMap));
-    if (!highlighter.colorMap) {
+    if (!InitNodeColorMap(&highlighter.colorMap, 512)) {
         free(highlighter.languages);
         free(highlighter.colors);
         ts_parser_delete(highlighter.parser);
         return false;
     }
-    for (int i = 0; i < colorCount; i++) {
-        highlighter.colorMap[i].nodeName = defaultColorMap[i].nodeName;
-        highlighter.colorMap[i].color = defaultColorMap[i].color;
-    }
-    highlighter.numColors = colorCount;
+    InitColorMap(&highlighter.colorMap);
     highlighter.initialized = true;
     return true;
 }
@@ -301,9 +437,9 @@ void SyntaxCleanup() {
         free(highlighter.colors);
         highlighter.colors = NULL;
     }
-    if (highlighter.colorMap) {
-        free(highlighter.colorMap);
-        highlighter.colorMap = NULL;
+    if (highlighter.colorMap.entries) {
+        free(highlighter.colorMap.entries);
+        highlighter.colorMap.entries = NULL;
     }
     if (highlighter.languages) {
         for (int i = 0; i < highlighter.numLanguages; i++) {
@@ -373,6 +509,7 @@ bool SyntaxCycleLanguage() {
         if (highlighter.languages[idx].name && LoadLanguage(&highlighter.languages[idx])) {
             ts_parser_set_language(highlighter.parser, highlighter.languages[idx].func());
             highlighter.language = highlighter.languages[idx].name;
+            
             if (highlighter.tree) {
                 ts_tree_delete(highlighter.tree);
                 highlighter.tree = NULL;
@@ -386,63 +523,41 @@ bool SyntaxCycleLanguage() {
 }
 
 void SyntaxUpdate(const char *text, int textLen) {
-    printf("SyntaxUpdate called with textLen: %d\n", textLen);
-    if (!highlighter.initialized) {
-        printf("  Error: Highlighter not initialized\n");
+    if (!highlighter.initialized || !text || textLen <= 0 || !highlighter.language) {
         return;
     }
-    if (!text || textLen <= 0) {
-        printf("  Error: Invalid text data\n");
-        return;
-    }
-    if (!highlighter.language) {
-        printf("  No language set, skipping parse\n");
-        if (highlighter.tree) {
-            ts_tree_delete(highlighter.tree);
-            highlighter.tree = NULL;
-        }
-        return;
-    }
-    printf("  Language: %s\n", highlighter.language);
     if (textLen > highlighter.maxColors) {
-        printf("  Reallocating colors array to %d bytes\n", textLen);
-        SyntaxColor *newColors = (SyntaxColor*)realloc(highlighter.colors, textLen * sizeof(SyntaxColor));
+        Color *newColors = (Color*)realloc(highlighter.colors, textLen * sizeof(Color));
         if (!newColors) {
-            printf("  Error: Failed to reallocate colors array\n");
             return;
         }
         highlighter.colors = newColors;
         highlighter.maxColors = textLen;
         for (int i = 0; i < textLen; i++) {
-            COPY_COLOR(highlighter.colors[i], highlighter.defaultColor);
+            COPY_Color(highlighter.colors[i], highlighter.defaultColor);
         }
     }
-    bool needsReparse = highlighter.lastText == NULL || textLen != highlighter.lastTextLen || memcmp(text, highlighter.lastText, textLen) != 0;
-    printf("  Needs reparse: %s\n", needsReparse ? "Yes" : "No");
+    bool needsReparse = 
+        highlighter.lastText == NULL || 
+        textLen != highlighter.lastTextLen || 
+        memcmp(text, highlighter.lastText, textLen) != 0;
     if (needsReparse) {
         if (highlighter.tree) {
-            printf("  Deleting old syntax tree\n");
             ts_tree_delete(highlighter.tree);
             highlighter.tree = NULL;
         }
         if (highlighter.lastText) {
             free(highlighter.lastText);
-            highlighter.lastText = NULL;
         }
         highlighter.lastText = (char*)malloc(textLen + 1);
         if (!highlighter.lastText) {
-            printf("  Error: Failed to allocate memory for text\n");
             return;
         }
         memcpy(highlighter.lastText, text, textLen);
         highlighter.lastText[textLen] = '\0';
-        highlighter.lastTextLen = textLen;
+        highlighter.lastTextLen = textLen;  
         for (int i = 0; i < textLen; i++) {
-            COPY_COLOR(highlighter.colors[i], highlighter.defaultColor);
-        }
-        if (!highlighter.parser) {
-            printf("  Error: No parser available\n");
-            return;
+            COPY_Color(highlighter.colors[i], highlighter.defaultColor);
         }
         bool languageLoaded = false;
         for (int i = 0; i < highlighter.numLanguages; i++) {
@@ -450,98 +565,130 @@ void SyntaxUpdate(const char *text, int textLen) {
                 strcmp(highlighter.languages[i].name, highlighter.language) == 0) {
                 if (LoadLanguage(&highlighter.languages[i])) {
                     languageLoaded = true;
-                    printf("  Language loaded successfully\n");
                     ts_parser_set_language(highlighter.parser, highlighter.languages[i].func());
                     break;
                 }
             }
         }
         if (!languageLoaded) {
-            printf("  Error: Failed to load language: %s\n", highlighter.language);
+            if (highlighter.debugMode) {
+                printf("Failed to load language: %s\n", highlighter.language);
+            }
             return;
         }
-        printf("  Parsing text...\n");
         highlighter.tree = ts_parser_parse_string(highlighter.parser, NULL, text, textLen);
         if (!highlighter.tree) {
-            printf("  Error: Failed to parse text\n");
+            if (highlighter.debugMode) {
+                printf("Failed to parse text\n");
+            }
             return;
         }
-        printf("  Parse successful, applying highlighting\n");
         TSNode rootNode = ts_tree_root_node(highlighter.tree);
-        if (ts_node_is_null(rootNode)) {
-            printf("  Error: Root node is null\n");
-            return;
+        if (!ts_node_is_null(rootNode)) {
+            ApplyNodeHighlighting(rootNode);
         }
-        ApplyNodeHighlighting(rootNode, 0);
-        printf("  Highlighting applied\n");
     }
 }
 
 bool SyntaxCheckLanguageAvailability(const char *langName) {
-    printf("Checking language availability: %s\n", langName);
+    if (!langName) return false;
     for (int i = 0; i < highlighter.numLanguages; i++) {
         if (highlighter.languages[i].name && 
             strcmp(highlighter.languages[i].name, langName) == 0) {
             bool success = LoadLanguage(&highlighter.languages[i]);
-            printf("Language %s is %s\n", langName, success ? "available" : "not available");
             if (success && highlighter.languages[i].handle) {
                 dlclose(highlighter.languages[i].handle);
                 highlighter.languages[i].handle = NULL;
                 highlighter.languages[i].func = NULL;
             }
+            
             return success;
         }
     }
-    printf("Language %s not found in available languages\n", langName);
     return false;
 }
 
 void SyntaxFindLanguageLibraries() {
-    const char *searchPaths[] = {
-        "/usr/lib/tree-sitter/",
-        "/usr/local/lib/tree-sitter/",
-        "./",
-        "./modules/",
-        "../modules/"
-    };
-    for (int i = 0; i < sizeof(searchPaths)/sizeof(searchPaths[0]); i++) {
-        for (int j = 0; j < highlighter.numLanguages; j++) {
-            const char *lang = highlighter.languages[j].name;
-            if (!lang) continue;
-            char libPath[512];
-            snprintf(libPath, sizeof(libPath), "%slibtree-sitter-%s.so", searchPaths[i], lang);
-            FILE *f = fopen(libPath, "rb");
-            if (f) {
-                printf("  Found: %s\n", libPath);
-                fclose(f);
+    if (highlighter.debugMode) {
+        const char *searchPaths[] = {
+            "/usr/lib/tree-sitter/",
+            "/usr/local/lib/tree-sitter/",
+            "./",
+            "./modules/",
+            "../modules/"
+        };
+        for (int i = 0; i < sizeof(searchPaths)/sizeof(searchPaths[0]); i++) {
+            for (int j = 0; j < highlighter.numLanguages; j++) {
+                const char *lang = highlighter.languages[j].name;
+                if (!lang) continue;
+                char libPath[512];
+                snprintf(libPath, sizeof(libPath), "%slibtree-sitter-%s.so", searchPaths[i], lang);
+                FILE *f = fopen(libPath, "rb");
+                if (f) {
+                    printf("  Found: %s\n", libPath);
+                    fclose(f);
+                }
             }
         }
     }
 }
+
 void SyntaxDrawText(float x, float y, const char *text, int length, int startPos) {
-    if (!highlighter.initialized || !highlighter.drawFunc || !text || length <= 0) return;
-    if ((startPos < 0 || startPos >= highlighter.lastTextLen)||(!highlighter.language || !highlighter.tree)) {
+    if (!highlighter.initialized || !highlighter.drawFunc || !text || length <= 0) {
+        return;
+    }
+    if ((startPos < 0 || startPos >= highlighter.lastTextLen) || 
+        (!highlighter.language || !highlighter.tree)) {
         highlighter.drawFunc(x, y, highlighter.fontPtr, highlighter.fontSize, text, highlighter.defaultColor, highlighter.userData);
         return;
     }
     Font *font = (Font*)highlighter.fontPtr;
     float scale = highlighter.fontSize / font->fontSize;
-    for (int i = 0; i < length; i++) {
-        SyntaxColor charColor;
-        if (startPos + i < highlighter.lastTextLen) {
-            charColor = highlighter.colors[startPos + i];
+    int batchStart = 0;
+    Color batchColor = highlighter.colors[startPos];
+    for (int i = 1; i <= length; i++) {
+        Color currentColor;
+        if (i < length && startPos + i < highlighter.lastTextLen) {
+            currentColor = highlighter.colors[startPos + i];
         } else {
-            charColor = highlighter.defaultColor;
+            currentColor = highlighter.defaultColor;
         }
-        char charStr[2] = {text[i], '\0'};
-        float charWidth = 0;
-        unsigned char c = (unsigned char)text[i];
-        if (c >= 32 && c < 32 + MAX_GLYPHS) {
-            const Glyph *g = &font->glyphs[c - 32];
-            charWidth = g->xadvance * scale;
+        if (i == length || 
+            currentColor.r != batchColor.r || 
+            currentColor.g != batchColor.g || 
+            currentColor.b != batchColor.b || 
+            currentColor.a != batchColor.a) {
+            char batchText[256];
+            int batchLen = i - batchStart;
+            if (batchLen < sizeof(batchText)) {
+                memcpy(batchText, text + batchStart, batchLen);
+                batchText[batchLen] = '\0';
+                highlighter.drawFunc(x, y, highlighter.fontPtr, highlighter.fontSize, batchText, batchColor, highlighter.userData);
+                float batchWidth = 0;
+                for (int j = batchStart; j < i; j++) {
+                    unsigned char c = (unsigned char)text[j];
+                    if (c >= 32 && c < 32 + MAX_GLYPHS) {
+                        const Glyph *g = &font->glyphs[c - 32];
+                        batchWidth += g->xadvance * scale;
+                    }
+                }
+                x += batchWidth;
+            } else {
+                for (int j = batchStart; j < i; j++) {
+                    char charStr[2] = {text[j], '\0'};
+                    highlighter.drawFunc(x, y, highlighter.fontPtr, highlighter.fontSize, charStr, batchColor, highlighter.userData);
+                    unsigned char c = (unsigned char)text[j];
+                    if (c >= 32 && c < 32 + MAX_GLYPHS) {
+                        const Glyph *g = &font->glyphs[c - 32];
+                        x += g->xadvance * scale;
+                    }
+                }
+            }
+            batchStart = i;
+            if (i < length) {
+                batchColor = currentColor;
+            }
         }
-        highlighter.drawFunc(x, y, highlighter.fontPtr, highlighter.fontSize, charStr, charColor, highlighter.userData);
-        x += charWidth;
     }
 }
 
@@ -578,21 +725,19 @@ void SyntaxSetFontSize(float size) {
     highlighter.fontSize = size;
 }
 
-void SyntaxDrawWrapper(float x, float y, void* fontPtr, float fontSize, const char* text, SyntaxColor color, void* userData) {
+void SyntaxDrawWrapper(float x, float y, void* fontPtr, float fontSize, const char* text, Color color, void* userData) {
     Color textColor = {color.r, color.g, color.b, color.a};
     DrawTextBatch(x, y, *(Font*)fontPtr, fontSize, text, textColor);
 }
 
-static void _PrintNode(TSNode node, int depth, char* text) {
-    if (ts_node_is_null(node)) return;
+static void PrintNode(TSNode node, int depth, char* text) {
+    if (!highlighter.debugMode || ts_node_is_null(node)) return;
     for (int i = 0; i < depth; i++) printf("  ");
     const char *type = ts_node_type(node);
     uint32_t startByte = ts_node_start_byte(node);
     uint32_t endByte = ts_node_end_byte(node);
-    SyntaxColor color = GetColorForNodeType(type);
-    printf("%s (%d-%d) Color:[%d,%d,%d,%d] ", 
-           type, startByte, endByte, 
-           color.r, color.g, color.b, color.a);
+    Color color = GetColorForNodeType(type);
+    printf("%s (%d-%d) Color:[%d,%d,%d,%d] ", type, startByte, endByte, color.r, color.g, color.b, color.a);
     if (text && endByte > startByte) {
         printf("Text: \"");
         int excerptLen = endByte - startByte;
@@ -612,89 +757,96 @@ static void _PrintNode(TSNode node, int depth, char* text) {
     uint32_t childCount = ts_node_child_count(node);
     for (uint32_t i = 0; i < childCount; i++) {
         TSNode child = ts_node_child(node, i);
-        _PrintNode(child, depth + 1, text);
+        PrintNode(child, depth + 1, text);
     }
 }
 
 void SyntaxDebugPrint() {
-    if (!highlighter.initialized) {
-        printf("Highlighter not initialized!\n");
+    if (!highlighter.debugMode || !highlighter.initialized) {
         return;
     }
-    if (!highlighter.language) {
-        printf("No language set!\n");
+    printf("Current language: %s\n", highlighter.language ? highlighter.language : "None");
+    if (!highlighter.tree || !highlighter.lastText) {
+        printf("No syntax tree or text available for debugging\n");
         return;
-    }
-    printf("Current language: %s\n", highlighter.language);
-    if (!highlighter.tree) {
-        printf("No syntax tree available!\n");
-        return;
-    }
-    if (!highlighter.lastText) {
-        printf("No text available for debugging!\n");
-        return;
-    }
-    printf("Document length: %d bytes\n", highlighter.lastTextLen);
-    printf("First 10 colors in buffer:\n");
-    for (int i = 0; i < 10 && i < highlighter.lastTextLen; i++) {
-        SyntaxColor color = highlighter.colors[i];
-        char c = highlighter.lastText[i];
-        char display = (c >= 32 && c < 127) ? c : '.';
-        printf("[%d] '%c' (%d) -> RGB(%d,%d,%d,%d)\n", 
-               i, display, (unsigned char)c,
-               color.r, color.g, color.b, color.a);
-    }
-    printf("\nColor map (%d entries):\n", highlighter.numColors);
-    for (int i = 0; i < highlighter.numColors; i++) {
-        if (!highlighter.colorMap[i].nodeName) break;
-        SyntaxColor color = highlighter.colorMap[i].color;
-        printf("  \"%s\" -> RGB(%d,%d,%d,%d)\n", 
-               highlighter.colorMap[i].nodeName,
-               color.r, color.g, color.b, color.a);
     }
     TSNode root = ts_tree_root_node(highlighter.tree);
-    if (ts_node_is_null(root)) {
-        printf("Root node is null!\n");
-        return;
+    if (!ts_node_is_null(root)) {
+        printf("\nSyntax Tree:\n");
+        PrintNode(root, 0, highlighter.lastText);
     }
-    printf("\nSyntax Tree:\n");
-    _PrintNode(root, 0, highlighter.lastText);
-    printf("\nDraw function: %p\n", (void*)highlighter.drawFunc);
-    printf("Font pointer: %p\n", highlighter.fontPtr);
-    printf("Font size: %.1f\n", highlighter.fontSize);
 }
 
-bool SyntaxInitWithLanguageDetection(SyntaxColor defaultColor, DrawTextFunc drawFunc, void* fontPtr, float fontSize, void* userData, const char *filename, char *text, int textLen, char *statusMsg, size_t statusMsgSize) {
-    if(!SyntaxInit(defaultColor, drawFunc, fontPtr, fontSize, userData)) return false;
-    SyntaxFindLanguageLibraries();
+bool SyntaxInitWithLanguageDetection(Color defaultColor, DrawTextFunc drawFunc, void* fontPtr, float fontSize, void* userData, const char *filename, char *text, int textLen, char *statusMsg, size_t statusMsgSize) {
+    if(!SyntaxInit(defaultColor, drawFunc, fontPtr, fontSize, userData)) {
+        return false;
+    }
+    if (highlighter.debugMode) {
+        SyntaxFindLanguageLibraries();
+    }
     bool languageSet = false;
     if(filename && strlen(filename) > 0) {
         if(SyntaxSetLanguageFromFile(filename)) {
             languageSet = true;
-            if(statusMsg) snprintf(statusMsg, statusMsgSize, "Syntax: %s", SyntaxGetLanguage());
-            printf("Language set to: %s based on file extension\n", SyntaxGetLanguage());
-        } else {
-            if(text && textLen > 0) {
-                if(strstr(filename, ".txt") && (strstr(text, "#include") || strstr(text, "int main"))) {
-                    if(SyntaxSetLanguage("c")) { languageSet = true; if(statusMsg) snprintf(statusMsg, statusMsgSize, "Syntax: C (auto-detected)"); printf("Language detected as C from content\n"); }
-                } else if(strstr(text, "<!DOCTYPE html") || strstr(text, "<html")) {
-                    if(SyntaxSetLanguage("html")) { languageSet = true; if(statusMsg) snprintf(statusMsg, statusMsgSize, "Syntax: HTML (auto-detected)"); printf("Language detected as HTML from content\n"); }
-                } else if(strstr(text, "#!/bin/bash") || strstr(text, "#!/usr/bin/env bash")) {
-                    if(SyntaxSetLanguage("bash")) { languageSet = true; if(statusMsg) snprintf(statusMsg, statusMsgSize, "Syntax: Bash (auto-detected)"); printf("Language detected as Bash from content\n"); }
-                } else if(strstr(text, "#!/usr/bin/python") || strstr(text, "#!/usr/bin/env python")) {
-                    if(SyntaxSetLanguage("python")) { languageSet = true; if(statusMsg) snprintf(statusMsg, statusMsgSize, "Syntax: Python (auto-detected)"); printf("Language detected as Python from content\n"); }
-                } else if(strstr(text, "package ") && strstr(text, "import ") && (strstr(text, "func ") || strstr(text, "type "))) {
-                    if(SyntaxSetLanguage("go")) { languageSet = true; if(statusMsg) snprintf(statusMsg, statusMsgSize, "Syntax: Go (auto-detected)"); printf("Language detected as Go from content\n"); }
-                } else if(strstr(text, "fn ") && strstr(text, "-> ") && (strstr(text, "let ") || strstr(text, "mut "))) {
-                    if(SyntaxSetLanguage("rust")) { languageSet = true; if(statusMsg) snprintf(statusMsg, statusMsgSize, "Syntax: Rust (auto-detected)"); printf("Language detected as Rust from content\n"); }
+            if(statusMsg) {
+                snprintf(statusMsg, statusMsgSize, "Syntax: %s", SyntaxGetLanguage());
+            }
+        } 
+        else if(text && textLen > 0) {
+            if(strstr(filename, ".txt")) {
+                if(strstr(text, "#include") || strstr(text, "int main")) {
+                    if(SyntaxSetLanguage("c")) { 
+                        languageSet = true; 
+                        if(statusMsg) snprintf(statusMsg, statusMsgSize, "Syntax: C (auto-detected)");
+                    }
+                } 
+                else if(strstr(text, "<!DOCTYPE html") || strstr(text, "<html")) {
+                    if(SyntaxSetLanguage("html")) { 
+                        languageSet = true; 
+                        if(statusMsg) snprintf(statusMsg, statusMsgSize, "Syntax: HTML (auto-detected)");
+                    }
+                } 
+                else if(strstr(text, "#!/bin/bash") || strstr(text, "#!/usr/bin/env bash")) {
+                    if(SyntaxSetLanguage("bash")) { 
+                        languageSet = true; 
+                        if(statusMsg) snprintf(statusMsg, statusMsgSize, "Syntax: Bash (auto-detected)");
+                    }
+                } 
+                else if(strstr(text, "#!/usr/bin/python") || strstr(text, "#!/usr/bin/env python")) {
+                    if(SyntaxSetLanguage("python")) { 
+                        languageSet = true; 
+                        if(statusMsg) snprintf(statusMsg, statusMsgSize, "Syntax: Python (auto-detected)");
+                    }
+                } 
+                else if(strstr(text, "package ") && strstr(text, "import ") && 
+                       (strstr(text, "func ") || strstr(text, "type "))) {
+                    if(SyntaxSetLanguage("go")) { 
+                        languageSet = true; 
+                        if(statusMsg) snprintf(statusMsg, statusMsgSize, "Syntax: Go (auto-detected)");
+                    }
+                } 
+                else if(strstr(text, "fn ") && strstr(text, "-> ") && 
+                       (strstr(text, "let ") || strstr(text, "mut "))) {
+                    if(SyntaxSetLanguage("rust")) { 
+                        languageSet = true; 
+                        if(statusMsg) snprintf(statusMsg, statusMsgSize, "Syntax: Rust (auto-detected)");
+                    }
                 }
             }
         }
     }
     if(!languageSet) {
-        if(SyntaxSetLanguage("c")) { languageSet = true; if(statusMsg) snprintf(statusMsg, statusMsgSize, "Syntax: C (default)"); printf("Defaulting to C language\n"); }
-        else { if(SyntaxCycleLanguage()) { languageSet = true; if(statusMsg) snprintf(statusMsg, statusMsgSize, "Syntax: %s (fallback)", SyntaxGetLanguage()); printf("Using fallback language: %s\n", SyntaxGetLanguage()); } else printf("Failed to set any syntax language\n"); }
+        if(SyntaxSetLanguage("c")) { 
+            languageSet = true; 
+            if(statusMsg) snprintf(statusMsg, statusMsgSize, "Syntax: C (default)");
+        }
+        else if(SyntaxCycleLanguage()) { 
+            languageSet = true; 
+            if(statusMsg) snprintf(statusMsg, statusMsgSize, "Syntax: %s (fallback)", SyntaxGetLanguage());
+        }
     }
-    if(languageSet && text && textLen > 0) SyntaxUpdate(text, textLen);
+    if(languageSet && text && textLen > 0) {
+        SyntaxUpdate(text, textLen);
+    }  
     return true;
 }

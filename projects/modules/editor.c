@@ -20,20 +20,21 @@ static double lastVerticalScrollTime = 0, lastHorizontalScrollTime = 0, scrollba
 static double lastKeyTime[GLFW_KEY_LAST + 1] = {0};
 static bool keyStates[GLFW_KEY_LAST + 1] = {false};
 Color textColor = {220, 220, 220, 255};
-Color minimapBgColor = {10, 10, 10, 180};
-Color minimapVisibleAreaColor = {40, 40, 40, 180};
-Color minimapCursorColor = {215, 215, 215, 245};
-Color minimapTextColor = {150, 150, 150, 180};
-Color modeLineBgColor = {30, 30, 30, 125};
-Color modeLineTextColor = {200, 200, 200, 255};
 WrappedLine wrappedLines[MAXTEXT * 2] = {0};
 int numWrappedLines = 0;
 
 bool IsSelValid() { return selStartLine != -1 && selEndLine != -1 && (selStartLine != selEndLine || selStartCol != selEndCol); }
 void InitLine(int idx) { if (idx < MAXTEXT && (lines[idx].text = malloc(MAXTEXT))) { lines[idx].text[0] = '\0'; lines[idx].length = 0; } else { fprintf(stderr, "Memory error\n"); exit(1); } }
 void FreeLines() { for (int i = 0; i < numLines; i++) { free(lines[i].text); lines[i].text = NULL; } numLines = 0; }
-void InsertChar(char c) { if (lines[cursorLine].length < MAXTEXT - 1) { memmove(&lines[cursorLine].text[cursorCol+1], &lines[cursorLine].text[cursorCol], lines[cursorLine].length - cursorCol + 1); lines[cursorLine].text[cursorCol++] = c; lines[cursorLine].length++; isFileDirty = true; } }
-
+void InsertChar(char c) {
+    if (lines[cursorLine].length < MAXTEXT - 1 && cursorCol <= lines[cursorLine].length) {
+        size_t numBytes = lines[cursorLine].length - cursorCol + 1;
+        memmove(&lines[cursorLine].text[cursorCol+1], &lines[cursorLine].text[cursorCol], numBytes);
+        lines[cursorLine].text[cursorCol++] = c;
+        lines[cursorLine].length++;
+        isFileDirty = true;
+    }
+}
 void DeleteChar() {
     if (cursorCol > 0) {
         memmove(&lines[cursorLine].text[cursorCol-1], &lines[cursorLine].text[cursorCol], 
@@ -557,9 +558,23 @@ void DrawScrollbarAndMinimap() {
         for (int i = 0; i < numLines; i += sampleInterval) {
             float lineY = floor(((float)i * lineHeight) * minimapScale);
             if (lineY < -lineHeight || lineY > FULL_HEIGHT) continue;
-            float lineH = fmax(1.0f, lineHeight * minimapScale);
+            float originalLineH = fmax(1.0f, lineHeight * minimapScale);
+            float lineH = originalLineH * 0.5f;
+            float centeredLineY = lineY + (originalLineH - lineH) / 2;
             int len = lines[i].length;
-            float totalLineW = fmax(4.0f, contentWidth * fmin(1.0f, fmax(0.15f, (float)len / fmax(80.0f, (float)cachedMaxLen * 0.8f))));
+            const char* lineText = lines[i].text;
+            int leadingWhitespace = 0;
+            for (int j = 0; j < len; j++) {
+                if (lineText[j] == ' ') leadingWhitespace++;
+                else if (lineText[j] == '\t') leadingWhitespace += 4;
+                else break;
+            }
+            float effectiveLen = len > 0 ? len - leadingWhitespace : 0;
+            float whitespaceRatio = len > 0 ? (float)leadingWhitespace / (float)cachedMaxLen : 0;
+            float contentRatio = len > 0 ? fmin(1.0f, effectiveLen / (float)cachedMaxLen) : 0;
+            float indentOffset = whitespaceRatio * contentWidth;
+            float effectiveWidth = contentRatio * contentWidth;
+            if (effectiveWidth < 4.0f && len > 0) effectiveWidth = 4.0f;
             int globalPos = 0;
             for (int j = 0; j < i; j++) {
                 globalPos += lines[j].length + 1;
@@ -567,12 +582,12 @@ void DrawScrollbarAndMinimap() {
             if (syntaxEnabled && len > 0) {
                 const int MAX_CHUNKS = 8;
                 int numChunks = fmin(MAX_CHUNKS, fmax(1, len / 5));
-                float chunkWidth = totalLineW / numChunks;
+                float chunkWidth = effectiveWidth / numChunks;
                 for (int chunk = 0; chunk < numChunks; chunk++) {
                     int chunkStart = (chunk * len) / numChunks;
                     int chunkEnd = ((chunk + 1) * len) / numChunks;
                     if (chunk == numChunks - 1) chunkEnd = len;
-                    SyntaxColor dominantColor = highlighter.defaultColor;
+                    Color dominantColor = highlighter.defaultColor;
                     int sampleIdx = (chunkStart + chunkEnd) / 2;
                     if (sampleIdx < len && globalPos + sampleIdx < highlighter.lastTextLen) {
                         dominantColor = highlighter.colors[globalPos + sampleIdx];
@@ -583,8 +598,8 @@ void DrawScrollbarAndMinimap() {
                         (unsigned char)(dominantColor.b * 0.85f),
                         (unsigned char)(120 + fmin(135, len))
                     };
-                    float chunkX = mmX + 2 + (chunk * chunkWidth);
-                    DrawRectBatch(chunkX, floor(lineY), ceil(chunkWidth), ceil(lineH), chunkColor);
+                    float chunkX = mmX + 2 + indentOffset + (chunk * chunkWidth);
+                    DrawRectBatch(chunkX, floor(centeredLineY), ceil(chunkWidth), ceil(lineH), chunkColor);
                 }
             } else {
                 Color lineColor = {
@@ -593,39 +608,66 @@ void DrawScrollbarAndMinimap() {
                     (unsigned char)(textColor.b * 0.5f),
                     (unsigned char)(100 + fmin(150, len))
                 };
-                DrawRectBatch(mmX + 2, floor(lineY), floor(totalLineW), ceil(lineH), lineColor);
+                DrawRectBatch(mmX + 2 + indentOffset, floor(centeredLineY), floor(effectiveWidth), ceil(lineH), lineColor);
             }
             if (hasSel && i >= normStartLine && i <= normEndLine) {
-                float selStartX = mmX + 2;
-                float selWidth = totalLineW;
+                float selStartX = mmX + 2 + indentOffset;
+                float selWidth = effectiveWidth;
                 if (i == normStartLine && normStartCol > 0) {
-                    float startRatio = (float)normStartCol / fmax(1, lines[i].length);
-                    selStartX = mmX + 2 + startRatio * totalLineW;
-                    selWidth = totalLineW - (startRatio * totalLineW);
+                    float startRatio = (float)(normStartCol - leadingWhitespace) / fmax(1, effectiveLen);
+                    if (startRatio < 0) startRatio = 0;
+                    selStartX = mmX + 2 + indentOffset + startRatio * effectiveWidth;
+                    selWidth = effectiveWidth - (startRatio * effectiveWidth);
                 }
                 if (i == normEndLine && normEndCol < lines[i].length) {
-                    float endRatio = (float)normEndCol / fmax(1, lines[i].length);
-                    selWidth = (endRatio * totalLineW) - (selStartX - (mmX + 2));
+                    float endRatio = (float)(normEndCol - leadingWhitespace) / fmax(1, effectiveLen);
+                    if (endRatio < 0) endRatio = 0;
+                    selWidth = (endRatio * effectiveWidth) - (selStartX - (mmX + 2 + indentOffset));
                 }
                 Color selectionColor = {120, 120, 220, 150};
-                DrawRectBatch(selStartX, floor(lineY), fmax(1, selWidth), ceil(lineH), selectionColor);
+                DrawRectBatch(selStartX, floor(centeredLineY), fmax(1, selWidth), ceil(lineH), selectionColor);
             }
         }
         if (cursorLine >= 0 && cursorLine < numLines) {
             float cursorY = floor(((float)cursorLine * lineHeight) * minimapScale);
             int currentLineLen = lines[cursorLine].length;
-            float lineW = fmax(4.0f, contentWidth * fmin(1.0f, fmax(0.15f, (float)currentLineLen / fmax(80.0f, (float)cachedMaxLen * 0.8f))));
-            float cursorLineH = fmax(1.0f, lineHeight * minimapScale);
+            const char* curLineText = lines[cursorLine].text;
+            int leadingWhitespace = 0;
+            for (int j = 0; j < currentLineLen; j++) {
+                if (curLineText[j] == ' ') leadingWhitespace++;
+                else if (curLineText[j] == '\t') leadingWhitespace += 4;
+                else break;
+            }
+            float effectiveLen = currentLineLen > 0 ? currentLineLen - leadingWhitespace : 0;
+            float whitespaceRatio = currentLineLen > 0 ? (float)leadingWhitespace / (float)cachedMaxLen : 0;
+            float contentRatio = currentLineLen > 0 ? fmin(1.0f, effectiveLen / (float)cachedMaxLen) : 0;
+            float indentOffset = whitespaceRatio * contentWidth;
+            float effectiveWidth = contentRatio * contentWidth;
+            if (effectiveWidth < 4.0f && currentLineLen > 0) effectiveWidth = 4.0f;
+            float originalLineH = fmax(1.0f, lineHeight * minimapScale);
+            float cursorLineH = originalLineH * 0.5f;
+            float centeredCursorY = cursorY + (originalLineH - cursorLineH) / 2;
             Color cursorLineBgColor = {60, 60, 80, 80};
-            DrawRectBatch(mmX + 2, floor(cursorY), floor(lineW), ceil(cursorLineH), cursorLineBgColor);
-            if (currentLineLen > 0) {
-                float xPosRatio = fmin(1.0f, (float)cursorCol / (float)currentLineLen);
-                float cursorX = mmX + 2 + (xPosRatio * lineW);
+            DrawRectBatch(mmX + 2 + indentOffset, floor(centeredCursorY), floor(effectiveWidth), ceil(cursorLineH), cursorLineBgColor);
+            if (currentLineLen > 0 && cursorCol >= leadingWhitespace) {
+                float xPosRatio = fmin(1.0f, (float)(cursorCol - leadingWhitespace) / fmax(1, effectiveLen));
+                float cursorX = mmX + 2 + indentOffset + (xPosRatio * effectiveWidth);
                 float cursorWidth = fmax(1.0f, minimapScale);
                 Color cursorColor = {255, 255, 255, 255};
                 DrawRectBatch(
                     cursorX,
-                    floor(cursorY),
+                    floor(centeredCursorY),
+                    cursorWidth,
+                    ceil(cursorLineH),
+                    cursorColor
+                );
+            } else if (currentLineLen > 0) {
+                float cursorX = mmX + 2 + (indentOffset * cursorCol / leadingWhitespace);
+                float cursorWidth = fmax(1.0f, minimapScale);
+                Color cursorColor = {255, 255, 255, 255};
+                DrawRectBatch(
+                    cursorX,
+                    floor(centeredCursorY),
                     cursorWidth,
                     ceil(cursorLineH),
                     cursorColor
@@ -635,6 +677,7 @@ void DrawScrollbarAndMinimap() {
         DrawRectBatch(mmX, thumbY, minimapWidth, thumbHeight, (Color){30, 30, 40, 80});
         DrawRectBatch(mmX, thumbY, minimapWidth, 1, (Color){100, 100, 120, 120});
         DrawRectBatch(mmX, thumbY + thumbHeight - 1, minimapWidth, 1, (Color){100, 100, 120, 120});
+        FlushRectBatch();
     }
     if (showMinimap) {
         int sbX = RIGHT_EDGE - scrollbarWidth;
@@ -658,16 +701,15 @@ void DrawScrollbarAndMinimap() {
 }
 void DrawModeline() {
     if (!showModeline) return;
-    int modeLineh = 20;
+    int modeLineh = 25;
     int y = window.screen_height - (showStatusBar ? statusBarHeight : 0) - modeLineh;
-    Color bgColor = {18, 20, 26, 245};
-    DrawRectBatch(0, y, window.screen_width, modeLineh, bgColor);
-    float fontSizeModeline = 24 * 0.75;
+    DrawRectBatch(0, y, window.screen_width, modeLineh, Color30);
+    float fontSizeModeline = 20;
     TextSize lineHeightMetric = GetTextSizeCached(font, fontSizeModeline, "Aj|");
     int textY = y + (modeLineh - lineHeightMetric.height) / 2;
     int leftX = 10, rightX = window.screen_width - 10;
     char statusIndicator[2] = {isFileDirty ? '*' : '+', '\0'};
-    Color statusColor = isFileDirty ? (Color){230, 100, 100, 255} : (Color){100, 230, 100, 255};
+    Color statusColor = isFileDirty ? Color17 : Color16;
     DrawTextBatch(leftX, textY, font, fontSizeModeline, statusIndicator, statusColor);
     leftX += GetTextSizeCached(font, fontSizeModeline, statusIndicator).width + 8;
     char* displayName = filename;
@@ -712,7 +754,7 @@ void DrawModeline() {
     DrawTextBatch(rightX, textY, font, fontSizeModeline, modeText, insertMode ? (Color){160, 200, 220, 255} : (Color){220, 180, 160, 255});
     rightX -= 15;
     char wrapText[12];
-    snprintf(wrapText, sizeof(wrapText), "%s", wordWrap ? "WRAP" : "NOWRAP");
+    snprintf(wrapText, sizeof(wrapText), "%s", wordWrap ? "W" : "");
     TextSize wrapSize = GetTextSizeCached(font, fontSizeModeline, wrapText);
     rightX -= wrapSize.width;
     DrawTextBatch(rightX, textY, font, fontSizeModeline, wrapText, wordWrap ? (Color){160, 220, 180, 255} : (Color){220, 160, 180, 255});
@@ -731,10 +773,10 @@ void DrawModeline() {
 }
 void InsertNewline() {
     if (numLines >= MAXTEXT) return;
-    InitLine(numLines);
     for (int i = numLines; i > cursorLine + 1; i--) {
         lines[i] = lines[i-1];
     }
+    InitLine(cursorLine + 1);
     lines[cursorLine+1].length = lines[cursorLine].length - cursorCol;
     memcpy(lines[cursorLine+1].text, &lines[cursorLine].text[cursorCol], lines[cursorLine+1].length + 1);
     lines[cursorLine].text[cursorCol] = '\0';
@@ -1000,7 +1042,6 @@ void DrawEditor() {
         } else {
             DrawTextBatch(drawX, lineY, font, fontSize, tempText, textColor);
         }
-        FlushTextBatch();
         int wrappedCursorLine, wrappedCursorCol;
         if (wordWrap) {
             OriginalToWrapped(cursorLine, cursorCol, &wrappedCursorLine, &wrappedCursorCol);
@@ -1056,24 +1097,43 @@ void KeyCallback(GLFWwindow* win, int key, int scan, int action, int mods) {
         int wl,wc; OriginalToWrapped(cursorLine,cursorCol,&wl,&wc);
         switch(key){
             case GLFW_KEY_LEFT:
-                if(ctrl){
-                    if(cursorCol > 0){
-                        while(cursorCol > 0 && isspace((unsigned char)lines[cursorLine].text[cursorCol-1])) cursorCol--;
-                        while(cursorCol > 0 && !isspace((unsigned char)lines[cursorLine].text[cursorCol-1])) cursorCol--;
-                    } else if(cursorLine > 0){
+                if (ctrl) {
+                    if (cursorCol > 0) {
+                        while (cursorCol > 0 && isspace((unsigned char)lines[cursorLine].text[cursorCol-1])) 
+                            cursorCol--;
+                        while (cursorCol > 0 && !isspace((unsigned char)lines[cursorLine].text[cursorCol-1])) 
+                            cursorCol--;
+                    } else if (cursorLine > 0) {
                         cursorLine--;
                         cursorCol = lines[cursorLine].length;
                     }
                     OriginalToWrapped(cursorLine, cursorCol, &wl, &wc);
                 } else {
-                    OriginalToWrapped(cursorLine, cursorCol, &wl, &wc);
-                    if(wc > 0){
-                        wc--;
-                    } else if(wl > 0){
-                        wl--;
-                        wc = wrappedLines[wl].length;
+                    int oldWl, oldWc;
+                    OriginalToWrapped(cursorLine, cursorCol, &oldWl, &oldWc);
+                    if (oldWc > 0) {
+                        oldWc--;
+                    } else {
+                        if (oldWl > 0) {
+                            oldWl--;
+                            oldWc = wrappedLines[oldWl].length;
+                        }
                     }
-                    WrappedToOriginal(wl, wc, &cursorLine, &cursorCol);
+                    int newCursorLine, newCursorCol;
+                    WrappedToOriginal(oldWl, oldWc, &newCursorLine, &newCursorCol);
+                    if (newCursorLine == cursorLine && newCursorCol == cursorCol && 
+                        !(oldWl == 0 && oldWc == 0)) {
+                        if (cursorCol > 0) {
+                            cursorCol--;
+                        } else if (cursorLine > 0) {
+                            cursorLine--;
+                            cursorCol = lines[cursorLine].length;
+                        }
+                    } else {
+                        cursorLine = newCursorLine;
+                        cursorCol = newCursorCol;
+                    }
+                    OriginalToWrapped(cursorLine, cursorCol, &wl, &wc);
                 }
                 break;
             case GLFW_KEY_RIGHT:
@@ -1489,7 +1549,7 @@ void DrawFps() {
     static char fpsText[16];
     snprintf(fpsText, sizeof(fpsText), "%.0f", window.fps);
     TextSize fps = GetTextSizeCached(font, 22, fpsText);
-    DrawText(window.screen_width - fps.width - 10, (window.screen_height/2)-(fps.height/2), font, 22, fpsText, (Color){245, 245, 245, 145});
+    DrawText(window.screen_width - fps.width - 10, (window.screen_height/2)-(fps.height/2), font, 22, fpsText, Color00);
 }
 void Close() {
     SyntaxCleanup();
@@ -1507,6 +1567,7 @@ void Draw() {
         }
     }
     DrawEditor();
+    FlushTextBatch();
     DrawLineNumbers();
     DrawHorizontalScrollbar();
     DrawScrollbarAndMinimap();
@@ -1531,7 +1592,7 @@ int Init(int argc, char *argv[]) {
     } else {
         InitLine(0);
     }
-    SyntaxColor defaultTextColor = {textColor.r, textColor.g, textColor.b, textColor.a};
+    Color defaultTextColor = {textColor.r, textColor.g, textColor.b, textColor.a};
     char* initialText = ConstructTextFromLines();
     int textLen = initialText ? strlen(initialText) : 0;
     if (!SyntaxInitWithLanguageDetection(defaultTextColor, SyntaxDrawWrapper, &font, fontSize, NULL, filename, initialText, textLen, statusMsg, sizeof(statusMsg))) {
