@@ -4,13 +4,12 @@
 Font font;
 Shader shaderfontcursor;
 
-#include "modules/syntax.c"
 #include "modules/editor.c"
 
 int main(int argc, char *argv[]) {
     window.opt.floating = true;
     //window.opt.transparent = true;glClearColor(0.0f, 0.0f, 0.0f, 0.75f);
-    WindowInit(1920, 1080, "Text Editor");
+    WindowInit(1920, 1080, "Grafenic - Text Editor");
     font = LoadFont("./res/fonts/Monocraft.ttf");//font.nearest = false;
     //shaderfont.hotreloading = true;//shaderdefault.hotreloading = true;
     Init(argc, argv);
@@ -47,7 +46,8 @@ int main(int argc, char *argv[]) {
 //  search & replace & regex 
 //  autopair brackets,quotes 
 //  color picker
-//  lsp for autocompletion
+//  lsp autocompletion
 //  git info
 //  copilot like ai
 //  snyk anlysis
+

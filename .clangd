@@ -1,0 +1,32 @@
+CompileFlags:
+  Add: 
+    - -I.
+    - -I./deps
+    - -I./projects
+    - -I./src
+    - -I/usr/local/include
+    - -I../src
+    - -I../include
+
+Index:
+  Background: Build
+  StandardLibrary: true
+
+InlayHints:
+  Enabled: true
+  ParameterNames: true
+  DeducedTypes: true
+
+Diagnostics:
+  UnusedIncludes: Strict
+  ClangTidy:
+    Add: 
+      - modernize-*
+      - performance-*
+      - bugprone-*
+    Remove: 
+      - modernize-use-trailing-return-type
+      - bugprone-suspicious-include
+
+Hover:
+  ShowAKA: true

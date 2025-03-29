@@ -474,11 +474,7 @@ void WindowClose();
     
     #define MAX_GLYPHS 256
     #define ATLAS_FONT_SIZE 128.0
-    #define CHAR_CACHE_SIZE 1024
-    #define STRING_CACHE_SIZE 128
-    #define MAX_CACHED_STRING_LEN 64
     #define FONT_CACHE_SIZE 64
-    #define MAX_BATCH_CHARS 4096
 
     typedef struct {
         float x0, y0, x1, y1;      // Coordinates of the glyph in the atlas (in pixels)
@@ -496,6 +492,7 @@ void WindowClose();
         int oversampling;          // Dimensions of the oversampling
         int atlasWidth;            // Dimensions of the atlas Width
         int atlasHeight;           // Dimensions of the atlas Height
+        int glyphCount;            // Glyph Numbers
         Glyph glyphs[MAX_GLYPHS];  // Glyph data for ASCII characters 32-127
         float fontSize;            // Font size for which glyphs were generated
         bool nearest;              // Nearest filter
@@ -507,7 +504,12 @@ void WindowClose();
         int height;
     } TextSize;
     
+    uint32_t DecodeUTF8(const char** text);
+    bool IsValidUTF8String(const char* str);
+    size_t UTF8Length(const char* str);
     Font GenAtlas(Font font);
+    bool FindSpaceInAtlas(Font* font, int width, int height, int* x, int* y);
+    int AddGlyphToAtlas(Font* font, uint32_t codepoint);
     Font LoadFont(const char* fontPath);
     Font SetFontSize(Font font, float fontSize);
     void PreloadFontSizes(Font font);

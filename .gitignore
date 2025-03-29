@@ -1,5 +1,4 @@
 .vscode
-.clangd
 callgrind.out.*
 cachegrind.out.*
 grafenic

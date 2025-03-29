@@ -87,7 +87,7 @@ build() {
     if [ "$SOURCES" == "./projects/editor.c" ]; then
         need tree-sitter
         need tree-sitter-c
-        echo -e "$CC $CFLAGS \$(pkg-config --cflags freetype2) $SOURCES -o $TARGET \$(pkg-config --libs tree-sitter) -ldl -lgrafenic $LDFLAGS"
+        echo -e "$CC $CFLAGS \$(pkg-config --cflags freetype2) $SOURCES -o $TARGET \$(pkg-config --libs tree-sitter) -ljson-c -ldl -lgrafenic $LDFLAGS"
         $CC $CFLAGS $FREETYPE $SOURCES -o $TARGET $(pkg-config --libs tree-sitter) -lgrafenic $LDFLAGS
     else
         echo -e "$CC $CFLAGS \$(pkg-config --cflags freetype2) $SOURCES -o $TARGET -ldl -lgrafenic $LDFLAGS"

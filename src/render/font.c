@@ -1,4 +1,96 @@
 
+typedef struct {
+    uint32_t codepoint;  // Unicode codepoint
+    int glyphIndex;      // Index in the glyphs array
+    bool used;
+} CodepointMap;
+
+#define CODEPOINT_MAP_SIZE 1024  // Adjust based on how many glyphs you want to support
+CodepointMap codepointMap[CODEPOINT_MAP_SIZE] = {0};
+
+int GetGlyphIndex(uint32_t codepoint) {
+    unsigned int hash = codepoint % CODEPOINT_MAP_SIZE;
+    for (int i = 0; i < CODEPOINT_MAP_SIZE; i++) {
+        unsigned int index = (hash + i) % CODEPOINT_MAP_SIZE;
+        if (codepointMap[index].used && codepointMap[index].codepoint == codepoint) {
+            return codepointMap[index].glyphIndex;
+        }
+        if (!codepointMap[index].used) {
+            break;
+        }
+    }
+    return 0;
+}
+
+uint32_t DecodeUTF8(const char** text) {
+    const unsigned char* bytes = (const unsigned char*)(*text);
+    uint32_t codepoint = 0;
+    int length = 0;
+    if (bytes[0] < 0x80) {
+        codepoint = bytes[0];
+        length = 1;
+    }
+    // 2-byte sequence (110x xxxx 10xx xxxx)
+    else if ((bytes[0] & 0xE0) == 0xC0) {
+        if ((bytes[1] & 0xC0) != 0x80) return 0xFFFD;
+        codepoint = ((bytes[0] & 0x1F) << 6) | (bytes[1] & 0x3F);
+        if (codepoint < 0x80) return 0xFFFD;
+        length = 2;
+    }
+    // 3-byte sequence (1110 xxxx 10xx xxxx 10xx xxxx)
+    else if ((bytes[0] & 0xF0) == 0xE0) {
+        if ((bytes[1] & 0xC0) != 0x80 || (bytes[2] & 0xC0) != 0x80) 
+            return 0xFFFD;
+        codepoint = ((bytes[0] & 0x0F) << 12) | 
+                    ((bytes[1] & 0x3F) << 6) | 
+                    (bytes[2] & 0x3F);
+        if (codepoint < 0x800 || (codepoint >= 0xD800 && codepoint <= 0xDFFF)) 
+            return 0xFFFD;
+        
+        length = 3;
+    }
+    // 4-byte sequence (1111 0xxx 10xx xxxx 10xx xxxx 10xx xxxx)
+    else if ((bytes[0] & 0xF8) == 0xF0) {
+        if ((bytes[1] & 0xC0) != 0x80 || 
+            (bytes[2] & 0xC0) != 0x80 || 
+            (bytes[3] & 0xC0) != 0x80) 
+            return 0xFFFD;
+        codepoint = ((bytes[0] & 0x07) << 18) | 
+                    ((bytes[1] & 0x3F) << 12) | 
+                    ((bytes[2] & 0x3F) << 6) | 
+                    (bytes[3] & 0x3F);
+        if (codepoint < 0x10000 || codepoint > 0x10FFFF) 
+            return 0xFFFD;
+        
+        length = 4;
+    }
+    else {
+        return 0xFFFD;
+    }
+    *text += length;
+    return codepoint;
+}
+
+bool IsValidUTF8String(const char* str) {
+    while (*str) {
+        const char* start = str;
+        uint32_t codepoint = DecodeUTF8(&str);
+        if (codepoint == 0xFFFD && start == str) {
+            return false;
+        }
+    }
+    return true;
+}
+
+size_t UTF8Length(const char* str) {
+    size_t count = 0;
+    while (*str) {
+        DecodeUTF8(&str);
+        count++;
+    }
+    return count;
+}
+
 int CalculateAtlasSize(int numGlyphs, float fontSize, int oversampling) {
     float estimatedAreaPerGlyph = (fontSize * fontSize) * oversampling * oversampling;
     float totalArea = estimatedAreaPerGlyph * numGlyphs;
@@ -140,6 +232,82 @@ Font GenAtlas(Font font) {
     return font;
 }
 
+bool FindSpaceInAtlas(Font* font, int width, int height, int* x, int* y) {
+    static unsigned char* atlasBitmap = NULL;
+    static int lastAtlasWidth = 0;
+    static int lastAtlasHeight = 0;
+    if (atlasBitmap == NULL || lastAtlasWidth != font->atlasWidth || lastAtlasHeight != font->atlasHeight) {
+        if (atlasBitmap) free(atlasBitmap);
+        atlasBitmap = (unsigned char*)calloc(font->atlasWidth * font->atlasHeight, 1);
+        lastAtlasWidth = font->atlasWidth;
+        lastAtlasHeight = font->atlasHeight;
+        for (int i = 0; i < font->glyphCount; i++) {
+            Glyph* g = &font->glyphs[i];
+            for (int iy = g->y0; iy < g->y1; iy++) {
+                for (int ix = g->x0; ix < g->x1; ix++) {
+                    if (ix >= 0 && ix < font->atlasWidth && iy >= 0 && iy < font->atlasHeight) {
+                        atlasBitmap[iy * font->atlasWidth + ix] = 1;
+                    }
+                }
+            }
+        }
+    }
+    for (int startY = 0; startY <= font->atlasHeight - height; startY++) {
+        for (int startX = 0; startX <= font->atlasWidth - width; startX++) {
+            bool fits = true;
+            for (int iy = 0; iy < height && fits; iy++) {
+                for (int ix = 0; ix < width && fits; ix++) {
+                    if (atlasBitmap[(startY + iy) * font->atlasWidth + (startX + ix)] != 0) {
+                        fits = false;
+                        break;
+                    }
+                }
+            }
+            if (fits) {
+                for (int iy = 0; iy < height; iy++) {
+                    for (int ix = 0; ix < width; ix++) {
+                        atlasBitmap[(startY + iy) * font->atlasWidth + (startX + ix)] = 1;
+                    }
+                }
+                *x = startX;
+                *y = startY;
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+int AddGlyphToAtlas(Font* font, uint32_t codepoint) {
+    int glyphIndex = GetGlyphIndex(codepoint);
+    if (glyphIndex > 0) {
+        return glyphIndex;
+    }
+    FT_Error error = FT_Load_Char(font->face, codepoint, FT_LOAD_RENDER | FT_LOAD_FORCE_AUTOHINT);
+    if (error) {
+        return 0;
+    }
+    int x, y;
+    if (!FindSpaceInAtlas(font, font->face->glyph->bitmap.width, font->face->glyph->bitmap.rows, &x, &y)) {
+        return 0;
+    }
+    int newGlyphIndex = font->glyphCount;
+    font->glyphCount++;
+    Glyph* glyph = &font->glyphs[newGlyphIndex];
+    FT_GlyphSlot slot = font->face->glyph;
+    unsigned int hash = codepoint % CODEPOINT_MAP_SIZE;
+    for (int i = 0; i < CODEPOINT_MAP_SIZE; i++) {
+        unsigned int index = (hash + i) % CODEPOINT_MAP_SIZE;
+        if (!codepointMap[index].used) {
+            codepointMap[index].codepoint = codepoint;
+            codepointMap[index].glyphIndex = newGlyphIndex;
+            codepointMap[index].used = true;
+            break;
+        }
+    }
+    return newGlyphIndex;
+}
+
 Font LoadFont(const char* fontPath) {
     Font font = {0};
     FT_Error error = FT_Init_FreeType(&font.library);
@@ -256,7 +424,7 @@ typedef struct {
 
 typedef struct {
     TextBatch batches[MAX_BATCH_CALLS];
-    int activetextBatchCount;
+    int activeBatchCount;
     bool batchingEnabled;
 } TextRenderState;
 
@@ -643,31 +811,26 @@ void DrawTextBatch(int x, int y, Font font, float fontSize, const char* text, Co
         float h = (glyph->y1 - glyph->y0) * scale;
         BatchChar* ch = &charBatch[textBatchCount];
         ch->color = color;
-        // Bottom left
         ch->vertices[0] = x_start;
         ch->vertices[1] = y_start + h;
         ch->vertices[2] = 0.0f;
         ch->vertices[3] = glyph->u0;
         ch->vertices[4] = glyph->v1;
-        // Bottom right
         ch->vertices[5] = x_start + w;
         ch->vertices[6] = y_start + h;
         ch->vertices[7] = 0.0f;
         ch->vertices[8] = glyph->u1;
         ch->vertices[9] = glyph->v1;
-        // Top right
         ch->vertices[10] = x_start + w;
         ch->vertices[11] = y_start;
         ch->vertices[12] = 0.0f;
         ch->vertices[13] = glyph->u1;
         ch->vertices[14] = glyph->v0;
-        // Top left
         ch->vertices[15] = x_start;
         ch->vertices[16] = y_start;
         ch->vertices[17] = 0.0f;
         ch->vertices[18] = glyph->u0;
         ch->vertices[19] = glyph->v0;
-        // End
         textBatchCount++;
         xpos += glyph->xadvance * scale;
     }

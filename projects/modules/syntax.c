@@ -279,7 +279,9 @@ static void InitColorMap(NodeColorMap *map) {
 } while(0)
 
 static bool LoadLanguage(LanguageLib *lib) {
+    if (!lib || !lib->name) return false;
     if (lib->handle) return true;
+    
     if (highlighter.debugMode) {
         printf("Loading language: %s\n", lib->name);
     }
@@ -291,25 +293,38 @@ static bool LoadLanguage(LanguageLib *lib) {
         "../modules/libtree-sitter-%s.so",
         "libtree-sitter-%s.so"
     };
+    bool found = false;
     for (int i = 0; i < sizeof(paths)/sizeof(paths[0]); i++) {
         char libPath[512];
-        snprintf(libPath, sizeof(libPath), paths[i], lib->name);
+        int result = snprintf(libPath, sizeof(libPath), paths[i], lib->name);
+        if (result < 0 || result >= sizeof(libPath)) {
+            continue;
+        }
         lib->handle = dlopen(libPath, RTLD_LAZY);
         if (lib->handle) {
             if (highlighter.debugMode) {
                 printf("  Successfully loaded: %s\n", libPath);
             }
+            found = true;
             break;
         }
     }
-    if (!lib->handle) {
+    if (!found) {
         if (highlighter.debugMode) {
             printf("  Failed to load library for %s: %s\n", lib->name, dlerror());
         }
         return false;
     }
     char funcName[128];
-    snprintf(funcName, sizeof(funcName), "tree_sitter_%s", lib->name);
+    int result = snprintf(funcName, sizeof(funcName), "tree_sitter_%s", lib->name);
+    if (result < 0 || result >= sizeof(funcName)) {
+        if (highlighter.debugMode) {
+            printf("  Function name too long for %s\n", lib->name);
+        }
+        dlclose(lib->handle);
+        lib->handle = NULL;
+        return false;
+    }
     lib->func = (const TSLanguage *(*)(void))dlsym(lib->handle, funcName);
     if (!lib->func) {
         if (highlighter.debugMode) {
@@ -379,7 +394,10 @@ static void ApplyNodeHighlighting(TSNode node) {
 bool SyntaxInit(Color defaultColor, DrawTextFunc drawFunc, void* fontPtr, float fontSize, void *userData) {
     if (highlighter.initialized) return true;
     highlighter.parser = ts_parser_new();
-    if (!highlighter.parser) return false;
+    if (!highlighter.parser) {
+        fprintf(stderr, "Error: Failed to create tree-sitter parser\n");
+        return false;
+    }
     highlighter.defaultColor = defaultColor;
     highlighter.drawFunc = drawFunc;
     highlighter.fontPtr = fontPtr;
@@ -389,6 +407,7 @@ bool SyntaxInit(Color defaultColor, DrawTextFunc drawFunc, void* fontPtr, float 
     highlighter.maxColors = 65536;
     highlighter.colors = (Color*)calloc(highlighter.maxColors, sizeof(Color));
     if (!highlighter.colors) {
+        fprintf(stderr, "Error: Failed to allocate color buffer\n");
         ts_parser_delete(highlighter.parser);
         return false;
     }
@@ -398,6 +417,7 @@ bool SyntaxInit(Color defaultColor, DrawTextFunc drawFunc, void* fontPtr, float 
     highlighter.numLanguages = MAX_LANGUAGES;
     highlighter.languages = (LanguageLib*)calloc(highlighter.numLanguages, sizeof(LanguageLib));
     if (!highlighter.languages) {
+        fprintf(stderr, "Error: Failed to allocate language list\n");
         free(highlighter.colors);
         ts_parser_delete(highlighter.parser);
         return false;
@@ -409,6 +429,7 @@ bool SyntaxInit(Color defaultColor, DrawTextFunc drawFunc, void* fontPtr, float 
         highlighter.languages[i].func = NULL;
     }
     if (!InitNodeColorMap(&highlighter.colorMap, 512)) {
+        fprintf(stderr, "Error: Failed to initialize color map\n");
         free(highlighter.languages);
         free(highlighter.colors);
         ts_parser_delete(highlighter.parser);
@@ -529,64 +550,67 @@ void SyntaxUpdate(const char *text, int textLen) {
     if (textLen > highlighter.maxColors) {
         Color *newColors = (Color*)realloc(highlighter.colors, textLen * sizeof(Color));
         if (!newColors) {
+            fprintf(stderr, "Error: Failed to resize color buffer\n");
             return;
+        }
+        for (int i = highlighter.maxColors; i < textLen; i++) {
+            COPY_Color(newColors[i], highlighter.defaultColor);
         }
         highlighter.colors = newColors;
         highlighter.maxColors = textLen;
-        for (int i = 0; i < textLen; i++) {
-            COPY_Color(highlighter.colors[i], highlighter.defaultColor);
-        }
     }
     bool needsReparse = 
         highlighter.lastText == NULL || 
         textLen != highlighter.lastTextLen || 
-        memcmp(text, highlighter.lastText, textLen) != 0;
-    if (needsReparse) {
-        if (highlighter.tree) {
-            ts_tree_delete(highlighter.tree);
-            highlighter.tree = NULL;
-        }
-        if (highlighter.lastText) {
-            free(highlighter.lastText);
-        }
-        highlighter.lastText = (char*)malloc(textLen + 1);
-        if (!highlighter.lastText) {
-            return;
-        }
-        memcpy(highlighter.lastText, text, textLen);
-        highlighter.lastText[textLen] = '\0';
-        highlighter.lastTextLen = textLen;  
-        for (int i = 0; i < textLen; i++) {
-            COPY_Color(highlighter.colors[i], highlighter.defaultColor);
-        }
-        bool languageLoaded = false;
-        for (int i = 0; i < highlighter.numLanguages; i++) {
-            if (highlighter.languages[i].name && 
-                strcmp(highlighter.languages[i].name, highlighter.language) == 0) {
-                if (LoadLanguage(&highlighter.languages[i])) {
-                    languageLoaded = true;
-                    ts_parser_set_language(highlighter.parser, highlighter.languages[i].func());
-                    break;
-                }
+        (highlighter.lastText && memcmp(text, highlighter.lastText, textLen) != 0);
+    if (!needsReparse) {
+        return; 
+    }
+    if (highlighter.tree) {
+        ts_tree_delete(highlighter.tree);
+        highlighter.tree = NULL;
+    }
+    if (highlighter.lastText) {
+        free(highlighter.lastText);
+    }
+    highlighter.lastText = (char*)malloc(textLen + 1);
+    if (!highlighter.lastText) {
+        fprintf(stderr, "Error: Failed to allocate text buffer\n");
+        return;
+    }
+    memcpy(highlighter.lastText, text, textLen);
+    highlighter.lastText[textLen] = '\0';
+    highlighter.lastTextLen = textLen;
+    for (int i = 0; i < textLen; i++) {
+        COPY_Color(highlighter.colors[i], highlighter.defaultColor);
+    }
+    bool languageLoaded = false;
+    for (int i = 0; i < highlighter.numLanguages; i++) {
+        if (highlighter.languages[i].name && 
+            strcmp(highlighter.languages[i].name, highlighter.language) == 0) {
+            if (LoadLanguage(&highlighter.languages[i])) {
+                languageLoaded = true;
+                ts_parser_set_language(highlighter.parser, highlighter.languages[i].func());
+                break;
             }
         }
-        if (!languageLoaded) {
-            if (highlighter.debugMode) {
-                printf("Failed to load language: %s\n", highlighter.language);
-            }
-            return;
+    }
+    if (!languageLoaded) {
+        if (highlighter.debugMode) {
+            printf("Failed to load language: %s\n", highlighter.language);
         }
-        highlighter.tree = ts_parser_parse_string(highlighter.parser, NULL, text, textLen);
-        if (!highlighter.tree) {
-            if (highlighter.debugMode) {
-                printf("Failed to parse text\n");
-            }
-            return;
+        return;
+    }
+    highlighter.tree = ts_parser_parse_string(highlighter.parser, NULL, text, textLen);
+    if (!highlighter.tree) {
+        if (highlighter.debugMode) {
+            printf("Failed to parse text\n");
         }
-        TSNode rootNode = ts_tree_root_node(highlighter.tree);
-        if (!ts_node_is_null(rootNode)) {
-            ApplyNodeHighlighting(rootNode);
-        }
+        return;
+    }
+    TSNode rootNode = ts_tree_root_node(highlighter.tree);
+    if (!ts_node_is_null(rootNode)) {
+        ApplyNodeHighlighting(rootNode);
     }
 }
 
@@ -637,8 +661,8 @@ void SyntaxDrawText(float x, float y, const char *text, int length, int startPos
     if (!highlighter.initialized || !highlighter.drawFunc || !text || length <= 0) {
         return;
     }
-    if ((startPos < 0 || startPos >= highlighter.lastTextLen) || 
-        (!highlighter.language || !highlighter.tree)) {
+    if (startPos < 0 || startPos >= highlighter.lastTextLen || 
+        !highlighter.language || !highlighter.tree) {
         highlighter.drawFunc(x, y, highlighter.fontPtr, highlighter.fontSize, text, highlighter.defaultColor, highlighter.userData);
         return;
     }
@@ -658,9 +682,10 @@ void SyntaxDrawText(float x, float y, const char *text, int length, int startPos
             currentColor.g != batchColor.g || 
             currentColor.b != batchColor.b || 
             currentColor.a != batchColor.a) {
-            char batchText[256];
             int batchLen = i - batchStart;
-            if (batchLen < sizeof(batchText)) {
+            if (batchLen <= 0) continue;
+            if (batchLen < 256) {
+                char batchText[256];
                 memcpy(batchText, text + batchStart, batchLen);
                 batchText[batchLen] = '\0';
                 highlighter.drawFunc(x, y, highlighter.fontPtr, highlighter.fontSize, batchText, batchColor, highlighter.userData);
@@ -676,7 +701,8 @@ void SyntaxDrawText(float x, float y, const char *text, int length, int startPos
             } else {
                 for (int j = batchStart; j < i; j++) {
                     char charStr[2] = {text[j], '\0'};
-                    highlighter.drawFunc(x, y, highlighter.fontPtr, highlighter.fontSize, charStr, batchColor, highlighter.userData);
+                    highlighter.drawFunc(x, y, highlighter.fontPtr, highlighter.fontSize, 
+                                      charStr, batchColor, highlighter.userData);
                     unsigned char c = (unsigned char)text[j];
                     if (c >= 32 && c < 32 + MAX_GLYPHS) {
                         const Glyph *g = &font->glyphs[c - 32];
