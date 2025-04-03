@@ -2181,21 +2181,28 @@ void GoToDefinition() {
     }
     isRequestInProgress = false;
 }
+void ToggleLsp() {
+    if (lsp.active) {
+        LspStop();
+        snprintf(statusMsg, sizeof(statusMsg), "LSP server disabled");
+    } else {
+        LspInit();
+        if (lsp.active) {
+            char* text = ConstructTextFromLines();
+            if (text) {
+                LspNotifyDidOpen(filename, text);
+                free(text);
+            }
+            snprintf(statusMsg, sizeof(statusMsg), "LSP server enabled");
+        } else {
+            snprintf(statusMsg, sizeof(statusMsg), "Failed to initialize LSP server");
+        }
+    }
+}
 void EditorLspKeyHandler(int key, int action, int mods) {
     if (action != GLFW_PRESS) return;
     bool ctrl = (mods & GLFW_MOD_CONTROL) != 0;
     bool shift = (mods & GLFW_MOD_SHIFT) != 0;
-    if (key == GLFW_KEY_F12 || (key == GLFW_KEY_G && ctrl)) {
-        fprintf(stderr, "F12 or Ctrl+G pressed - Go To Definition\n");
-        preventUiReopen = false;
-        lsp.hoverInfo.active = false;
-        GoToDefinition();
-        return;
-    }
-    if (ctrl && shift && key == GLFW_KEY_SPACE) {
-        ToggleAutoCompletion();
-        return;
-    }
     if (key == GLFW_KEY_ESCAPE) {
         if (lsp.completions.active || lsp.hoverInfo.active) {
             lsp.completions.active = false;
@@ -2239,21 +2246,35 @@ void EditorLspKeyHandler(int key, int action, int mods) {
     }
     if (ctrl && shift) {
         switch (key) {
-            case GLFW_KEY_R:
-                if (lsp.active) LspRestart();
-                return;
-            case GLFW_KEY_P:
-                preventUiReopen = !preventUiReopen;
-                if (preventUiReopen) {
-                    preventionStartTime = window.time;
-                    lsp.completions.active = false;
-                    lsp.hoverInfo.active = false;
-                    snprintf(statusMsg, sizeof(statusMsg), "LSP popups disabled");
-                } else {
-                    snprintf(statusMsg, sizeof(statusMsg), "LSP popups enabled");
-                }
+            case GLFW_KEY_SPACE:
+                ToggleAutoCompletion();
                 return;
         }
+    }
+    switch (key) {
+        case GLFW_KEY_F9:
+            ToggleLsp();
+            return;
+        case GLFW_KEY_F10:
+            preventUiReopen = false;
+            lsp.hoverInfo.active = false;
+            snprintf(statusMsg, sizeof(statusMsg), "Go To Definition");
+            GoToDefinition();
+            return;
+        case GLFW_KEY_F11:
+            preventUiReopen = !preventUiReopen;
+            if (preventUiReopen) {
+                preventionStartTime = window.time;
+                lsp.completions.active = false;
+                lsp.hoverInfo.active = false;
+                snprintf(statusMsg, sizeof(statusMsg), "LSP popups disabled");
+            } else {
+                snprintf(statusMsg, sizeof(statusMsg), "LSP popups enabled");
+            }
+            return;
+        case GLFW_KEY_F12:
+            if (lsp.active) LspRestart();
+            return;
     }
 }
 void EditorLspCharHandler(unsigned int c) {

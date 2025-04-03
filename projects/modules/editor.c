@@ -29,9 +29,7 @@ WrappedLine wrappedLines[MAXTEXT * 2] = {0};
 int numWrappedLines = 0;
 
 bool IsSelValid() { return selStartLine != -1 && selEndLine != -1 && (selStartLine != selEndLine || selStartCol != selEndCol); }
-
 void InitLine(int idx) { if (idx < MAXTEXT && (lines[idx].text = malloc(MAXTEXT))) { lines[idx].text[0] = '\0'; lines[idx].length = 0; } else { fprintf(stderr, "Memory error\n"); exit(1); } }
-
 void FreeLines() { for (int i = 0; i < numLines; i++) { free(lines[i].text); lines[i].text = NULL; } numLines = 0; }
 
 void InsertChar(char c) {
@@ -137,10 +135,7 @@ void DeleteCharAfter() {
     isFileDirty = true;
 }
 
-int MaxScroll() {
-    int maxVisLines = (window.screen_height - (showStatusBar ? statusBarHeight : 0) - (showModeline ? modeLineHeight : 0)) / lineHeight;
-    return fmax(0, ((wordWrap ? numWrappedLines : numLines) - maxVisLines) * lineHeight);
-}
+int MaxScroll() { return fmax(0, ((wordWrap ? numWrappedLines : numLines) - ((window.screen_height - (showStatusBar ? statusBarHeight : 0) - (showModeline ? modeLineHeight : 0)) / lineHeight)) * lineHeight); }
 
 int MaxHorizontalScroll() {
     if (wordWrap) return 0;
@@ -234,18 +229,17 @@ void AdjustScrollToCursor() {
 void UpdateScroll(double dt) {
     dt = fmin(dt, 0.05f);
     if (scroll.smoothScroll) {
-        float factor = 10.0f;
-        float t = 1.0f - exp(-factor * dt);
-        float deltaY = scroll.targetY - scroll.currentY;
-        float deltaX = scroll.targetX - scroll.currentX;
-        const float EPSILON = 0.1f;
-        if (fabs(deltaY) > EPSILON) {
-            scroll.currentY += deltaY * t;
-            if (fabs(deltaY) < EPSILON * 2) scroll.currentY = scroll.targetY;
+        float f = 10.0f, t = 1.0f - exp(-f * dt);
+        float dy = scroll.targetY - scroll.currentY;
+        float dx = scroll.targetX - scroll.currentX;
+        const float ε = 0.1f;
+        if (fabs(dy) > ε) {
+            scroll.currentY += dy * t;
+            if (fabs(dy) < ε * 2) scroll.currentY = scroll.targetY;
         }
-        if (fabs(deltaX) > EPSILON) {
-            scroll.currentX += deltaX * t;
-            if (fabs(deltaX) < EPSILON * 2) scroll.currentX = scroll.targetX;
+        if (fabs(dx) > ε) {
+            scroll.currentX += dx * t;
+            if (fabs(dx) < ε * 2) scroll.currentX = scroll.targetX;
         }
     } else {
         scroll.currentY = scroll.targetY;
@@ -263,98 +257,67 @@ void UpdateScroll(double dt) {
 }
 
 int FindCharPos(int wrappedLine, int mouseX) {
-    if (wrappedLine < 0 || wrappedLine >= (wordWrap ? numWrappedLines : numLines)) return 0;
+    if (wrappedLine < 0 || wrappedLine >= (wordWrap ? numWrappedLines : numLines)) return 0; 
     int xOffset = showLineNumbers ? gutterWidth : 0;
     mouseX += scroll.currentX;
     if (mouseX <= xOffset) return 0;
-    const char* lineText;
-    int startCol = 0;
-    int lineLen;
+    const char* text;
+    int start = 0, len;
     if (wordWrap) {
         int origLine = wrappedLines[wrappedLine].originalLine;
-        startCol = wrappedLines[wrappedLine].startCol;
-        lineLen = wrappedLines[wrappedLine].length;
-        lineText = lines[origLine].text + startCol;
+        start = wrappedLines[wrappedLine].startCol;
+        len = wrappedLines[wrappedLine].length;
+        text = lines[origLine].text + start;
     } else {
-        lineText = lines[wrappedLine].text;
-        lineLen = lines[wrappedLine].length;
+        text = lines[wrappedLine].text;
+        len = lines[wrappedLine].length;
     }
-    float currentX = xOffset;
-    for (int i = 0; i <= lineLen; i++) {
-        float charWidth;
-        if (i < lineLen) {
-            char charStr[2] = {lineText[i], '\0'};
-            charWidth = GetTextSizeCached(font, fontSize, charStr).width;
-        } else {
-            charWidth = GetTextSizeCached(font, fontSize, "m").width / 2;
-        }
-        float nextX = currentX + charWidth;
-        if (mouseX < (currentX + nextX) / 2) return i;
-        currentX = nextX;
+    float x = xOffset;
+    for (int i = 0; i <= len; i++) {
+        float w = (i < len) 
+            ? GetTextSizeCached(font, fontSize, (char[]){text[i],0}).width 
+            : GetTextSizeCached(font, fontSize, "m").width / 2;  
+        float next = x + w;
+        if (mouseX < (x + next) / 2) return i;
+        x = next;
     }
-    return lineLen;
+    return len;
 }
 
 void RecalculateWrappedLines() {
     numWrappedLines = 0;
     if (!wordWrap) {
         for (int i = 0; i < numLines && i < MAXTEXT * 2; i++) {
-            wrappedLines[i].originalLine = i;
-            wrappedLines[i].startCol = 0;
-            wrappedLines[i].length = lines[i].length;
-            wrappedLines[i].isWrapped = false;
+            wrappedLines[i] = (WrappedLine){i, 0, lines[i].length, false};
             numWrappedLines++;
         }
         return;
     }
-    int availableWidth = window.screen_width - (showLineNumbers ? gutterWidth : 0) - (showScrollbar ? scrollbarWidth : 0);
-    availableWidth = fmax(100, availableWidth);
+    int availWidth = window.screen_width - (showLineNumbers ? gutterWidth : 0) - (showScrollbar ? scrollbarWidth : 0);
+    availWidth = fmax(100, availWidth);
     for (int i = 0; i < numLines; i++) {
+        if (numWrappedLines >= MAXTEXT * 2 - 1) break;
         const char* text = lines[i].text;
-        int lineLength = lines[i].length;
-        if (numWrappedLines >= MAXTEXT * 2 - 1) {
-            break;
-        }
-        if (lineLength == 0 || GetTextSizeCached(font, fontSize, text).width <= availableWidth) {
-            wrappedLines[numWrappedLines].originalLine = i;
-            wrappedLines[numWrappedLines].startCol = 0;
-            wrappedLines[numWrappedLines].length = lineLength;
-            wrappedLines[numWrappedLines].isWrapped = false;
-            numWrappedLines++;
+        int lineLen = lines[i].length;
+        if (lineLen == 0 || GetTextSizeCached(font, fontSize, text).width <= availWidth) {
+            wrappedLines[numWrappedLines++] = (WrappedLine){i, 0, lineLen, false};
             continue;
         }
         int startCol = 0;
-        while (startCol < lineLength) {
-            if (numWrappedLines >= MAXTEXT * 2 - 1) {
-                break;
-            }
-            int endCol = startCol;
-            int lastBreakPoint = -1;
-            float currentWidth = 0;
-            while (endCol < lineLength) {
-                char charStr[2] = {text[endCol], '\0'};
-                float charWidth = GetTextSizeCached(font, fontSize, charStr).width;
-                
-                if (currentWidth + charWidth > availableWidth) {
-                    break;
-                }
-                currentWidth += charWidth;
-                if (text[endCol] == ' ' || text[endCol] == '\t' || text[endCol] == '-') {
-                    lastBreakPoint = endCol;
-                }
+        while (startCol < lineLen && numWrappedLines < MAXTEXT * 2 - 1) {
+            int endCol = startCol, lastBreak = -1;
+            float curWidth = 0;
+            while (endCol < lineLen) {
+                char c = text[endCol];
+                float charW = GetTextSizeCached(font, fontSize, (char[]){c,0}).width;
+                if (curWidth + charW > availWidth) break;
+                curWidth += charW;
+                if (c == ' ' || c == '\t' || c == '-') lastBreak = endCol;
                 endCol++;
             }
-            if (endCol == startCol) {
-                endCol = startCol + 1;
-            } 
-            else if (lastBreakPoint != -1 && endCol < lineLength) {
-                endCol = lastBreakPoint + 1;
-            }
-            wrappedLines[numWrappedLines].originalLine = i;
-            wrappedLines[numWrappedLines].startCol = startCol;
-            wrappedLines[numWrappedLines].length = endCol - startCol;
-            wrappedLines[numWrappedLines].isWrapped = (startCol > 0);
-            numWrappedLines++;
+            if (endCol == startCol) endCol = startCol + 1;
+            else if (lastBreak != -1 && endCol < lineLen) endCol = lastBreak + 1;
+            wrappedLines[numWrappedLines++] = (WrappedLine){i, startCol, endCol - startCol, (startCol > 0)};
             startCol = endCol;
         }
     }
@@ -1078,29 +1041,21 @@ void Zoom(float amount) {
     SyntaxSetFontSize(fontSize);
 }
 
-void DrawCursor(int cursorCol, int lineLength, float* cumWidths, float textX, float scrollCurrentX,
-    float scale, int lineHeight, bool lineHasSelection, bool isCursorVisible, 
-    bool insertMode, int lineY, const char* lineText) {
-    int clampedCol = Clamp(cursorCol, 0, lineLength);
-    float cursorX = textX - scrollCurrentX + cumWidths[clampedCol];
-    float charWidth = (clampedCol < lineLength) ? cumWidths[clampedCol + 1] - cumWidths[clampedCol] : font.glyphs[0].xadvance * scale;
-    if (lineHasSelection || !insertMode) {
-        if (isCursorVisible) {
-            DrawRectBatch(cursorX, lineY, charWidth / 3, lineHeight, (Color){255,255,255,255});
+void DrawCursor(int curCol, int lineLen, float* widths, float x, float scrollX, float scale, int lineH, bool hasSel, bool visible, bool ins, int y, const char* text) {
+    int col = Clamp(curCol, 0, lineLen);
+    float cx = x - scrollX + widths[col];
+    float cw = (col < lineLen) ? widths[col+1] - widths[col] : font.glyphs[0].xadvance * scale;
+    if (hasSel || !ins) {
+        if (visible) {
+            DrawRectBatch(cx, y, cw/3, lineH, (Color){255,255,255,255});
             FlushRectBatch();
         }
-    } else if (isCursorVisible) {
-        int intCharWidth = (int)charWidth;
-        DrawRectBatch(cursorX, lineY, intCharWidth, lineHeight, (Color){255,255,255,255});
+    } else if (visible) {
+        int w = (int)cw;
+        DrawRectBatch(cx, y, w, lineH, (Color){255,255,255,255});
         FlushRectBatch();
-        if (clampedCol < lineLength) {
-            char currentChar[2] = {lineText[clampedCol], '\0'};
-            DrawTextBatch(cursorX, lineY, font, fontSize, currentChar, (Color){0,0,0,255});
-        }
-    } else {
-        int intCharWidth = (int)charWidth;
-        DrawRectBorder(cursorX, lineY, intCharWidth, lineHeight, 3, (Color){255,255,255,255});
-    }
+        if (col < lineLen) DrawTextBatch(cx, y, font, fontSize, (char[]){text[col],0}, (Color){0,0,0,255});
+    } else DrawRectBorder(cx, y, (int)cw, lineH, 3, (Color){255,255,255,255});
 }
 
 void DrawEditor() {
@@ -1540,11 +1495,6 @@ default_handler:
                             snprintf(statusMsg, sizeof(statusMsg), "Syntax highlighting disabled");
                         }
                     }
-                }
-                break;
-            case GLFW_KEY_F1:
-                if (ctrl) {
-                    SyntaxDebugPrint();
                 }
                 break;
             case 47:if(ctrl&&fontSize>=22.0f)Zoom(-2.0f);break;

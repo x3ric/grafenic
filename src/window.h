@@ -475,6 +475,12 @@ void WindowClose();
     #define MAX_GLYPHS 256
     #define ATLAS_FONT_SIZE 128.0
     #define FONT_CACHE_SIZE 64
+    #define MAX_BATCH_CHARS 8192
+    #define MAX_BATCH_CALLS 16
+    #define CHAR_CACHE_SIZE 256
+    #define STRING_CACHE_SIZE 64
+    #define MAX_CACHED_STRING_LEN 32
+    #define CODEPOINT_MAP_SIZE 8192
 
     typedef struct {
         float x0, y0, x1, y1;      // Coordinates of the glyph in the atlas (in pixels)
@@ -504,9 +510,57 @@ void WindowClose();
         int height;
     } TextSize;
     
-    uint32_t DecodeUTF8(const char** text);
-    bool IsValidUTF8String(const char* str);
-    size_t UTF8Length(const char* str);
+    typedef struct {
+        uint32_t codepoint;  // Unicode codepoint
+        int glyphIndex;      // Index in the glyphs array
+        bool used;
+    } CodepointMap;
+
+    typedef struct {
+        Font font;
+        float fontSize;
+        Color color;
+        GLfloat* vertices;
+        GLuint* indices;
+        int vertexCount;
+        int indexCount;
+        int charCount;
+    } TextBatch;
+
+    typedef struct {
+        TextBatch batches[MAX_BATCH_CALLS];
+        int activetextBatchCount;
+        bool batchingEnabled;
+    } TextRenderState;
+    
+    typedef struct {
+        uint32_t c;
+        float fontSize;
+        int width;
+        int height;
+        bool valid;
+    } CharSizeCache;
+    
+    typedef struct {
+        float fontSize;
+        Font font;
+        bool used;
+        unsigned long lastUsed;
+    } FontCacheEntry;
+    
+    typedef struct {
+        char text[MAX_CACHED_STRING_LEN];
+        float fontSize;
+        TextSize size;
+        bool valid;
+        unsigned long lastUsed;
+    } StringSizeCache;
+
+    typedef struct {
+        GLfloat vertices[20];     // 5 attributes (x,y,z,u,v) for 4 vertices per char
+        Color color;
+    } BatchChar;
+
     Font GenAtlas(Font font);
     bool FindSpaceInAtlas(Font* font, int width, int height, int* x, int* y);
     int AddGlyphToAtlas(Font* font, uint32_t codepoint);

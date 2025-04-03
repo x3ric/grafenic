@@ -10,7 +10,8 @@ int main(int argc, char *argv[]) {
     window.opt.floating = true;
     //window.opt.transparent = true;glClearColor(0.0f, 0.0f, 0.0f, 0.75f);
     WindowInit(1920, 1080, "Grafenic - Text Editor");
-    font = LoadFont("./res/fonts/Monocraft.ttf");//font.nearest = false;
+    font = LoadFont("./res/fonts/Monocraft.ttf");
+    //font = LoadFont("./res/fonts/JetBrains.ttf");font.nearest = false;
     //shaderfont.hotreloading = true;//shaderdefault.hotreloading = true;
     Init(argc, argv);
     while (!WindowState()) {

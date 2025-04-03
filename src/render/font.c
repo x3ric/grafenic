@@ -1,11 +1,4 @@
 
-typedef struct {
-    uint32_t codepoint;  // Unicode codepoint
-    int glyphIndex;      // Index in the glyphs array
-    bool used;
-} CodepointMap;
-
-#define CODEPOINT_MAP_SIZE 1024  // Adjust based on how many glyphs you want to support
 CodepointMap codepointMap[CODEPOINT_MAP_SIZE] = {0};
 
 int GetGlyphIndex(uint32_t codepoint) {
@@ -22,75 +15,6 @@ int GetGlyphIndex(uint32_t codepoint) {
     return 0;
 }
 
-uint32_t DecodeUTF8(const char** text) {
-    const unsigned char* bytes = (const unsigned char*)(*text);
-    uint32_t codepoint = 0;
-    int length = 0;
-    if (bytes[0] < 0x80) {
-        codepoint = bytes[0];
-        length = 1;
-    }
-    // 2-byte sequence (110x xxxx 10xx xxxx)
-    else if ((bytes[0] & 0xE0) == 0xC0) {
-        if ((bytes[1] & 0xC0) != 0x80) return 0xFFFD;
-        codepoint = ((bytes[0] & 0x1F) << 6) | (bytes[1] & 0x3F);
-        if (codepoint < 0x80) return 0xFFFD;
-        length = 2;
-    }
-    // 3-byte sequence (1110 xxxx 10xx xxxx 10xx xxxx)
-    else if ((bytes[0] & 0xF0) == 0xE0) {
-        if ((bytes[1] & 0xC0) != 0x80 || (bytes[2] & 0xC0) != 0x80) 
-            return 0xFFFD;
-        codepoint = ((bytes[0] & 0x0F) << 12) | 
-                    ((bytes[1] & 0x3F) << 6) | 
-                    (bytes[2] & 0x3F);
-        if (codepoint < 0x800 || (codepoint >= 0xD800 && codepoint <= 0xDFFF)) 
-            return 0xFFFD;
-        
-        length = 3;
-    }
-    // 4-byte sequence (1111 0xxx 10xx xxxx 10xx xxxx 10xx xxxx)
-    else if ((bytes[0] & 0xF8) == 0xF0) {
-        if ((bytes[1] & 0xC0) != 0x80 || 
-            (bytes[2] & 0xC0) != 0x80 || 
-            (bytes[3] & 0xC0) != 0x80) 
-            return 0xFFFD;
-        codepoint = ((bytes[0] & 0x07) << 18) | 
-                    ((bytes[1] & 0x3F) << 12) | 
-                    ((bytes[2] & 0x3F) << 6) | 
-                    (bytes[3] & 0x3F);
-        if (codepoint < 0x10000 || codepoint > 0x10FFFF) 
-            return 0xFFFD;
-        
-        length = 4;
-    }
-    else {
-        return 0xFFFD;
-    }
-    *text += length;
-    return codepoint;
-}
-
-bool IsValidUTF8String(const char* str) {
-    while (*str) {
-        const char* start = str;
-        uint32_t codepoint = DecodeUTF8(&str);
-        if (codepoint == 0xFFFD && start == str) {
-            return false;
-        }
-    }
-    return true;
-}
-
-size_t UTF8Length(const char* str) {
-    size_t count = 0;
-    while (*str) {
-        DecodeUTF8(&str);
-        count++;
-    }
-    return count;
-}
-
 int CalculateAtlasSize(int numGlyphs, float fontSize, int oversampling) {
     float estimatedAreaPerGlyph = (fontSize * fontSize) * oversampling * oversampling;
     float totalArea = estimatedAreaPerGlyph * numGlyphs;
@@ -104,7 +28,7 @@ int CalculateAtlasSize(int numGlyphs, float fontSize, int oversampling) {
 
 Font GenAtlas(Font font) {
     if (font.fontSize <= 1) font.fontSize = ATLAS_FONT_SIZE;
-    if (font.oversampling <= 1) font.oversampling = 1;
+    if (font.oversampling <= 1) font.oversampling = 0;
     if (!font.face) return font;
     FT_Error error = FT_Set_Pixel_Sizes(font.face, 0, font.fontSize);
     if (error) {
@@ -188,10 +112,10 @@ Font GenAtlas(Font font) {
                     unsigned char* dst = &font.atlasData[((y + row) * font.atlasWidth + x) * 4];
                     unsigned char* src = &bitmap->buffer[row * bitmap->pitch];
                     for (int col = 0; col < bitmap->width; ++col) {
-                        *dst++ = 255;  // R
-                        *dst++ = 255;  // G
-                        *dst++ = 255;  // B
-                        *dst++ = *src++;  // A
+                        *dst++ = 255;    // R
+                        *dst++ = 255;    // G
+                        *dst++ = 255;    // B
+                        *dst++ = *src++; // A
                     }
                 }
             }
@@ -224,9 +148,9 @@ Font GenAtlas(Font font) {
     }
     glGenTextures(1, &font.textureID);
     glBindTexture(GL_TEXTURE_2D, font.textureID);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, font.atlasWidth, font.atlasHeight, 0, 
-                 GL_RGBA, GL_UNSIGNED_BYTE, font.atlasData);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, font.atlasWidth, font.atlasHeight, 0, GL_RGBA, GL_UNSIGNED_BYTE, font.atlasData);
     glTexOpt(font.nearest ? GL_NEAREST : GL_LINEAR, GL_CLAMP_TO_EDGE);
+    stbi_write_jpg("/tmp/atlas.jpg", font.atlasWidth, font.atlasHeight, 1, font.atlasData, font.atlasWidth);
     free(font.atlasData);
     font.atlasData = NULL;
     return font;
@@ -328,13 +252,6 @@ Font LoadFont(const char* fontPath) {
     return font;
 }
 
-typedef struct {
-    float fontSize;
-    Font font;
-    bool used;
-    unsigned long lastUsed;
-} FontCacheEntry;
-
 FontCacheEntry fontCacheTable[FONT_CACHE_SIZE] = {0};
 unsigned long fontCacheAccessCounter = 0;
 
@@ -384,50 +301,9 @@ void PreloadFontSizes(Font font) {
     }
 }
 
-typedef struct {
-    unsigned char c;
-    float fontSize;
-    int width;
-    int height;
-    bool valid;
-} CharSizeCache;
-
-#define CHAR_CACHE_SIZE 256
 CharSizeCache charSizeCache[CHAR_CACHE_SIZE] = {0};
-#define STRING_CACHE_SIZE 64
-#define MAX_CACHED_STRING_LEN 32
-
-typedef struct {
-    char text[MAX_CACHED_STRING_LEN];
-    float fontSize;
-    TextSize size;
-    bool valid;
-    unsigned long lastUsed;
-} StringSizeCache;
-
 StringSizeCache stringSizeCache[STRING_CACHE_SIZE] = {0};
 unsigned long stringSizeAccessCounter = 0;
-
-#define MAX_BATCH_CHARS 8192
-#define MAX_BATCH_CALLS 16
-
-typedef struct {
-    Font font;
-    float fontSize;
-    Color color;
-    GLfloat* vertices;
-    GLuint* indices;
-    int vertexCount;
-    int indexCount;
-    int charCount;
-} TextBatch;
-
-typedef struct {
-    TextBatch batches[MAX_BATCH_CALLS];
-    int activeBatchCount;
-    bool batchingEnabled;
-} TextRenderState;
-
 static TextRenderState textRenderState = {0};
 
 unsigned int HashTextString(const char* str, float fontSize) {
@@ -573,22 +449,6 @@ void RenderShaderText(ShaderObject obj, Color color, float fontSize) {
     // Projection Matrix
         GLfloat Projection[16], Model[16], View[16];
         CalculateProjections(obj,Model,Projection,View);
-    // Depth
-        if(obj.is3d) {
-            if(obj.cam.fov > 0.0f){
-                glEnable(GL_DEPTH_TEST);
-                glDepthFunc(GL_LEQUAL);
-                glEnable(GL_CULL_FACE);
-                glCullFace(GL_BACK);
-                glFrontFace(GL_CCW);
-            } else {
-                glEnable(GL_DEPTH_TEST);
-                glDepthFunc(GL_LESS);
-                glEnable(GL_CULL_FACE);
-                glCullFace(GL_FRONT);
-                glFrontFace(GL_CCW);
-            }
-        }
     // Debug
         if (window.debug.wireframe) {
             glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
@@ -625,11 +485,6 @@ void RenderShaderText(ShaderObject obj, Color color, float fontSize) {
         glBindBuffer(GL_ARRAY_BUFFER, 0);
         glBindVertexArray(0);
         glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
-    // Disable Effects
-        if(obj.is3d) {
-            glDisable(GL_CULL_FACE);
-            glDisable(GL_DEPTH_TEST);
-        }
 }
 
 void DrawText(int x, int y, Font font, float fontSize, const char* text, Color color) {
@@ -638,7 +493,6 @@ void DrawText(int x, int y, Font font, float fontSize, const char* text, Color c
     if (!font.face || !font.textureID) return;
     float scale = fontSize / font.fontSize;
     font = SetFontSize(font, font.fontSize);
-    #define MAX_BATCH_CHARS 4096
     GLfloat vertices[MAX_BATCH_CHARS * 20];
     GLuint indices[MAX_BATCH_CHARS * 6];
     int charCount = 0;
@@ -717,11 +571,6 @@ void DrawText(int x, int y, Font font, float fontSize, const char* text, Color c
     glBindTexture(GL_TEXTURE_2D, 0);
     //glDisable(GL_BLEND);
 }
-
-typedef struct {
-    GLfloat vertices[20];     // 5 attributes (x,y,z,u,v) for 4 vertices per char
-    Color color;
-} BatchChar;
 
 static BatchChar charBatch[MAX_BATCH_CHARS];
 static GLuint batchIndices[MAX_BATCH_CHARS * 6];
