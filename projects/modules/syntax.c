@@ -37,6 +37,13 @@ typedef struct {
 } NodeColorMap;
 
 typedef struct {
+    int open;
+    int close;
+} BracketPair;
+
+#define MAX_BRACKET_PAIRS 256
+
+typedef struct {
     Color *colors;          // Color array for text
     int maxColors;          // Max size of color array
     bool initialized;       // Initialization flag
@@ -54,11 +61,16 @@ typedef struct {
     void *userData;         // User data for draw function
     NodeColorMap colorMap;  // Node type to color mapping
     bool debugMode;         // Enable debug output
+    
+    // Bracket tracking
+    BracketPair bracketPairs[256];  // Store matched bracket pairs
+    int bracketPairCount;           // Number of tracked pairs
 } SyntaxHighlighter;
 
 static SyntaxHighlighter highlighter = {0};
 
 #define MAX_LANGUAGES 30
+
 static LanguageLib defaultLanguages[MAX_LANGUAGES] = {
     {"c", ".c,.h", NULL, NULL},
     {"cpp", ".cpp,.hpp,.cc,.hh,.cxx,.hxx", NULL, NULL},
@@ -543,6 +555,111 @@ bool SyntaxCycleLanguage() {
     return false;
 }
 
+static void ProcessBrackets(const char *text, int textLen) {
+    if (!text || textLen <= 0) return;
+    Color parenColors[5] = {Color01, Color06, Color11, Color01, Color06};
+    Color bracketColors[5] = {Color02, Color07, Color12, Color02, Color07};
+    Color braceColors[5] = {Color03, Color08, Color13, Color03, Color08};
+    Color angleColors[5] = {Color04, Color09, Color14, Color04, Color09};
+    typedef struct {
+        int pos;
+        char type;
+        int depth;
+    } BracketInfo;
+    BracketInfo stack[1024];
+    int stackSize = 0;
+    highlighter.bracketPairCount = 0;
+    for (int i = 0; i < textLen; i++) {
+        char c = text[i];
+        if (i < highlighter.lastTextLen) {
+            Color nodeColor = highlighter.colors[i];
+            Color stringColor = GetNodeColor(&highlighter.colorMap, "string", highlighter.defaultColor);
+            Color commentColor = GetNodeColor(&highlighter.colorMap, "comment", highlighter.defaultColor);
+            if ((memcmp(&nodeColor, &stringColor, sizeof(Color)) == 0) ||
+                (memcmp(&nodeColor, &commentColor, sizeof(Color)) == 0)) {
+                continue;
+            }
+        }
+        if (c == '(' || c == '[' || c == '{' || 
+            (c == '<' && i > 0 && (isalpha(text[i-1]) || text[i-1] == ' ' || text[i-1] == ','))) {
+            if (stackSize < 1024) {
+                stack[stackSize].pos = i;
+                stack[stackSize].type = c;
+                stackSize++;
+            }
+        }
+        else if ((c == ')' || c == ']' || c == '}' || 
+                (c == '>' && i > 0 && text[i-1] != '-' && text[i-1] != '=')) && stackSize > 0) {
+            char expected = 0;
+            switch (c) {
+                case ')': expected = '('; break;
+                case ']': expected = '['; break;
+                case '}': expected = '{'; break;
+                case '>': expected = '<'; break;
+            }  
+            if (expected) {
+                int j = stackSize - 1;
+                while (j >= 0 && stack[j].type != expected) j--;
+                if (j >= 0) {
+                    int openPos = stack[j].pos;
+                    int depth = j;
+                    if (expected == '(') {
+                        highlighter.colors[openPos] = parenColors[depth % 5];
+                        highlighter.colors[i] = parenColors[depth % 5];
+                    } else if (expected == '[') {
+                        highlighter.colors[openPos] = bracketColors[depth % 5];
+                        highlighter.colors[i] = bracketColors[depth % 5];
+                    } else if (expected == '{') {
+                        highlighter.colors[openPos] = braceColors[depth % 5];
+                        highlighter.colors[i] = braceColors[depth % 5];
+                    } else if (expected == '<') {
+                        highlighter.colors[openPos] = angleColors[depth % 5];
+                        highlighter.colors[i] = angleColors[depth % 5];
+                    }
+                    if (highlighter.bracketPairCount < MAX_BRACKET_PAIRS) {
+                        highlighter.bracketPairs[highlighter.bracketPairCount].open = openPos;
+                        highlighter.bracketPairs[highlighter.bracketPairCount].close = i;
+                        highlighter.bracketPairCount++;
+                    }
+                    for (int k = j; k < stackSize - 1; k++) {
+                        stack[k] = stack[k+1];
+                    }
+                    stackSize--;
+                }
+            }
+        }
+    }
+}
+
+int SyntaxFindMatchingBracket(int pos) {
+    if (!highlighter.initialized || pos < 0 || pos >= highlighter.lastTextLen)
+        return -1;
+    for (int i = 0; i < highlighter.bracketPairCount; i++) {
+        if (highlighter.bracketPairs[i].open == pos)
+            return highlighter.bracketPairs[i].close;
+        if (highlighter.bracketPairs[i].close == pos)
+            return highlighter.bracketPairs[i].open;
+    }
+    return -1;
+}
+
+bool SyntaxIsOpeningBracket(char c) {
+    return c == '(' || c == '[' || c == '{' || c == '<' || c == '"' || c == '\'' || c == '`';
+}
+
+char SyntaxGetClosingBracket(char c) {
+    switch (c) {
+        case '(': return ')';
+        case '[': return ']';
+        case '{': return '}';
+        case '<': return '>';
+        case '"': return '"';
+        case '\'': return '\'';
+        case '`': return '`';
+        default: return 0;
+    }
+}
+
 void SyntaxUpdate(const char *text, int textLen) {
     if (!highlighter.initialized || !text || textLen <= 0 || !highlighter.language) {
         return;
@@ -611,6 +728,7 @@ void SyntaxUpdate(const char *text, int textLen) {
     TSNode rootNode = ts_tree_root_node(highlighter.tree);
     if (!ts_node_is_null(rootNode)) {
         ApplyNodeHighlighting(rootNode);
+        ProcessBrackets(text, textLen);
     }
 }
 

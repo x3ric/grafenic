@@ -42,7 +42,7 @@ int main(int argc, char *argv[]) {
 //  term escape sequences support
 //  jupyter notebooks like cells with whatever interpreter you want
 // External Modules
-//  debugger like to debug itself and change variables introspectivly
+//  debugger like to debug and trace the editor to debug and change variables introspectivly
 //  diff folder,clipboard,git,timeline
 //  search & replace & regex 
 //  autopair brackets,quotes 
@@ -50,5 +50,4 @@ int main(int argc, char *argv[]) {
 //  lsp autocompletion
 //  git info
 //  copilot like ai
-//  snyk anlysis
-
+//  snyk anlysis just the cli

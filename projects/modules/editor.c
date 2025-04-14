@@ -15,6 +15,7 @@ int numLines = 1, cursorLine = 0, cursorCol = 0, lineHeight = 0, gutterWidth = 0
 bool isSelecting = false, showLineNumbers = true, showStatusBar = true, showScrollbar = true, wordWrap = false;
 bool isFileDirty = false, isScrollbarDragging = false, isHorizontalScrollbarDragging = false;
 bool insertMode = true, showMinimap = true, isMinimapDragging = false, showModeline = true;
+static bool autoParingEnabled = true;
 int selStartLine = -1, selStartCol = -1, selEndLine = -1, selEndCol = -1;
 int statusBarHeight = 25, scrollbarWidth = 12, minimapWidth = 100, modeLineHeight = 20;
 double fontSize = 24.0f;
@@ -32,7 +33,12 @@ bool IsSelValid() { return selStartLine != -1 && selEndLine != -1 && (selStartLi
 void InitLine(int idx) { if (idx < MAXTEXT && (lines[idx].text = malloc(MAXTEXT))) { lines[idx].text[0] = '\0'; lines[idx].length = 0; } else { fprintf(stderr, "Memory error\n"); exit(1); } }
 void FreeLines() { for (int i = 0; i < numLines; i++) { free(lines[i].text); lines[i].text = NULL; } numLines = 0; }
 
+#include "modules/undo.c"
+
 void InsertChar(char c) {
+    if (!isUndoRedoing) {
+        SaveUndoState(cursorLine, 1);
+    }
     if (cursorLine < 0 || cursorLine >= numLines) {
         fprintf(stderr, "Error: Invalid cursor line %d\n", cursorLine);
         return;
@@ -58,10 +64,48 @@ void InsertChar(char c) {
     isFileDirty = true;
 }
 
+typedef struct {
+    int line;
+    int col;
+    char open;
+    char close;
+    bool wasAutoInserted;
+} AutoPair;
+
+#define MAX_AUTO_PAIRS 32
+static AutoPair autoPairs[MAX_AUTO_PAIRS] = {0};
+static int numAutoPairs = 0;
+
 void DeleteChar() {
+    if (!isUndoRedoing) {
+        if (cursorCol == 0 && cursorLine > 0) {
+            SaveUndoState(cursorLine - 1, 2);
+        } else {
+            SaveUndoState(cursorLine, 1);
+        }
+    }
     if (cursorLine < 0 || cursorLine >= numLines || 
         cursorCol < 0 || cursorCol > lines[cursorLine].length) {
         return;
+    }
+    for (int i = 0; i < numAutoPairs; i++) {
+        if (autoPairs[i].line == cursorLine && 
+            autoPairs[i].col == cursorCol - 1 && 
+            autoPairs[i].wasAutoInserted) {
+            if (cursorCol < lines[cursorLine].length && 
+                lines[cursorLine].text[cursorCol] == autoPairs[i].close) {
+                memmove(&lines[cursorLine].text[cursorCol], 
+                        &lines[cursorLine].text[cursorCol+1], 
+                        lines[cursorLine].length - cursorCol);
+                lines[cursorLine].length--;
+                lines[cursorLine].text[lines[cursorLine].length] = '\0';
+                for (int j = i; j < numAutoPairs - 1; j++) {
+                    autoPairs[j] = autoPairs[j+1];
+                }
+                numAutoPairs--;
+            }
+            break;
+        }
     }
     if (cursorCol == 0) {
         if (cursorLine <= 0) return;
@@ -99,9 +143,35 @@ void DeleteChar() {
 }
 
 void DeleteCharAfter() {
+    if (!isUndoRedoing) {
+        if (cursorCol >= lines[cursorLine].length && cursorLine < numLines - 1) {
+            SaveUndoState(cursorLine, 2);
+        } else {
+            SaveUndoState(cursorLine, 1);
+        }
+    }
     if (cursorLine < 0 || cursorLine >= numLines || 
         cursorCol < 0 || cursorCol > lines[cursorLine].length) {
         return;
+    }
+    for (int i = 0; i < numAutoPairs; i++) {
+        if (autoPairs[i].line == cursorLine && 
+            autoPairs[i].col == cursorCol && 
+            autoPairs[i].wasAutoInserted) {
+            if (cursorCol < lines[cursorLine].length && 
+                lines[cursorLine].text[cursorCol+1] == autoPairs[i].close) {
+                memmove(&lines[cursorLine].text[cursorCol+1], 
+                        &lines[cursorLine].text[cursorCol+2], 
+                        lines[cursorLine].length - cursorCol - 1);
+                lines[cursorLine].length--;
+                lines[cursorLine].text[lines[cursorLine].length] = '\0';
+                for (int j = i; j < numAutoPairs - 1; j++) {
+                    autoPairs[j] = autoPairs[j+1];
+                }
+                numAutoPairs--;
+            }
+            break;
+        }
     }
     if (cursorCol >= lines[cursorLine].length) {
         if (cursorLine >= numLines - 1) return;
@@ -275,8 +345,8 @@ int FindCharPos(int wrappedLine, int mouseX) {
     float x = xOffset;
     for (int i = 0; i <= len; i++) {
         float w = (i < len) 
-            ? GetTextSizeCached(font, fontSize, (char[]){text[i],0}).width 
-            : GetTextSizeCached(font, fontSize, "m").width / 2;  
+        ? GetTextSizeCached(font, fontSize, (char[]){text[i],0}).width 
+        : GetTextSizeCached(font, fontSize, "m").width / 2;  
         float next = x + w;
         if (mouseX < (x + next) / 2) return i;
         x = next;
@@ -356,44 +426,44 @@ void DeleteSelection() {
     if (selStartLine == -1 || selEndLine == -1 || 
         selStartLine < 0 || selStartLine >= numLines ||
         selEndLine < 0 || selEndLine >= numLines) {
-        selStartLine = selStartCol = selEndLine = selEndCol = -1;
-        return;
-    }
-    int startLine = selStartLine, startCol = selStartCol;
-    int endLine = selEndLine, endCol = selEndCol;
-    if (startLine > endLine || (startLine == endLine && startCol > endCol)) {
-        int tl = startLine, tc = startCol;
-        startLine = endLine; startCol = endCol;
-        endLine = tl; endCol = tc;
-    }
-    startCol = fmax(0, fmin(startCol, lines[startLine].length));
-    endCol = fmax(0, fmin(endCol, lines[endLine].length));
-    if (startLine == endLine) {
-        if (startCol >= endCol) {
             selStartLine = selStartCol = selEndLine = selEndCol = -1;
-            isSelecting = false;
             return;
         }
-        int charsToMove = lines[startLine].length - endCol;
-        if (charsToMove > 0) {
-            memmove(&lines[startLine].text[startCol], 
+        int startLine = selStartLine, startCol = selStartCol;
+        int endLine = selEndLine, endCol = selEndCol;
+        if (startLine > endLine || (startLine == endLine && startCol > endCol)) {
+            int tl = startLine, tc = startCol;
+            startLine = endLine; startCol = endCol;
+            endLine = tl; endCol = tc;
+        }
+        startCol = fmax(0, fmin(startCol, lines[startLine].length));
+        endCol = fmax(0, fmin(endCol, lines[endLine].length));
+        if (startLine == endLine) {
+            if (startCol >= endCol) {
+                selStartLine = selStartCol = selEndLine = selEndCol = -1;
+                isSelecting = false;
+                return;
+            }
+            int charsToMove = lines[startLine].length - endCol;
+            if (charsToMove > 0) {
+                memmove(&lines[startLine].text[startCol], 
                     &lines[startLine].text[endCol], 
                     charsToMove + 1);
-        } else {
-            lines[startLine].text[startCol] = '\0';
-        }
-        lines[startLine].length -= (endCol - startCol);
-    } else {
-        size_t endLineRemaining = lines[endLine].length - endCol;
-        if (startCol + endLineRemaining >= MAXTEXT) {
-            lines[startLine].text[startCol] = '\0';
-            lines[startLine].length = startCol;
-            snprintf(statusMsg, sizeof(statusMsg), "Selection deleted (text truncated)");
-        } else {
-            if (endLineRemaining > 0) {
-                memcpy(lines[startLine].text + startCol, lines[endLine].text + endCol, endLineRemaining + 1);
-                lines[startLine].length = startCol + endLineRemaining;
+                } else {
+                    lines[startLine].text[startCol] = '\0';
+                }
+                lines[startLine].length -= (endCol - startCol);
             } else {
+                size_t endLineRemaining = lines[endLine].length - endCol;
+                if (startCol + endLineRemaining >= MAXTEXT) {
+                    lines[startLine].text[startCol] = '\0';
+                    lines[startLine].length = startCol;
+                    snprintf(statusMsg, sizeof(statusMsg), "Selection deleted (text truncated)");
+                } else {
+                    if (endLineRemaining > 0) {
+                        memcpy(lines[startLine].text + startCol, lines[endLine].text + endCol, endLineRemaining + 1);
+                        lines[startLine].length = startCol + endLineRemaining;
+                    } else {
                 lines[startLine].text[startCol] = '\0';
                 lines[startLine].length = startCol;
             }
@@ -871,6 +941,9 @@ void DrawModeline() {
 }
 
 void InsertNewline() {
+    if (!isUndoRedoing) {
+        SaveUndoState(cursorLine, 1);
+    }
     if (numLines >= MAXTEXT) {
         snprintf(statusMsg, sizeof(statusMsg), "Maximum number of lines reached (%d)", MAXTEXT);
         return;
@@ -1004,6 +1077,13 @@ void DeleteWordBackward() {
 }
 
 void DeleteWordForward() {
+    if (!isUndoRedoing) {
+        if (cursorCol >= lines[cursorLine].length && cursorLine < numLines - 1) {
+            SaveUndoState(cursorLine, 2);
+        } else {
+            SaveUndoState(cursorLine, 1);
+        }
+    }
     if (cursorCol >= lines[cursorLine].length) {
         DeleteCharAfter();
         return;
@@ -1202,6 +1282,13 @@ void DrawEditor() {
     }
 }
 
+int goalColumn = -1;
+int consecutiveEOLMoves = 0;
+bool wasAtEOL = false;
+bool nowAtEOL = false;
+#define MIN(a, b) ((a) < (b) ? (a) : (b))
+#define MAX(a, b) ((a) > (b) ? (a) : (b))
+
 void KeyCallback(GLFWwindow* win, int key, int scan, int action, int mods) {
     if (lsp.active) {
         EditorLspKeyHandler(key, action, mods);
@@ -1306,19 +1393,39 @@ void KeyCallback(GLFWwindow* win, int key, int scan, int action, int mods) {
                 }
                 break;
             case GLFW_KEY_UP:
-                if(targCol<0)targCol=wc;
-                if(wl>0){
-                    wl=fmax(0, ctrl ? wl-3 : wl-1);
-                    wc=fmin(targCol,wrappedLines[wl].length);
-                    WrappedToOriginal(wl,wc,&cursorLine,&cursorCol);
+                if (targCol < 0) targCol = wc;
+                wasAtEOL = (wc == wrappedLines[wl].length);
+                if (wl > 0) {
+                    wl = fmax(0, ctrl ? wl - 3 : wl - 1);
+                    wc = fmin(targCol, wrappedLines[wl].length);
+                    nowAtEOL = (wc == wrappedLines[wl].length);
+                    if (wasAtEOL && nowAtEOL)
+                        consecutiveEOLMoves++;
+                    else
+                        consecutiveEOLMoves = 0;
+                    if (consecutiveEOLMoves >= 2) {
+                        wc = wrappedLines[wl].length;
+                        targCol = INT_MAX;
+                    }
+                    WrappedToOriginal(wl, wc, &cursorLine, &cursorCol);
                 }
                 break;
             case GLFW_KEY_DOWN:
-                if(targCol<0)targCol=wc;
-                if(wl<numWrappedLines-1){
-                    wl=fmin(numWrappedLines-1, ctrl ? wl+3 : wl+1);
-                    wc=fmin(targCol,wrappedLines[wl].length);
-                    WrappedToOriginal(wl,wc,&cursorLine,&cursorCol);
+                if (targCol < 0) targCol = wc;
+                wasAtEOL = (wc == wrappedLines[wl].length);
+                if (wl < numWrappedLines - 1) {
+                    wl = fmin(numWrappedLines - 1, ctrl ? wl + 3 : wl + 1);
+                    wc = fmin(targCol, wrappedLines[wl].length);
+                    nowAtEOL = (wc == wrappedLines[wl].length);
+                    if (wasAtEOL && nowAtEOL)
+                        consecutiveEOLMoves++;
+                    else
+                        consecutiveEOLMoves = 0;
+                    if (consecutiveEOLMoves >= 2) {
+                        wc = wrappedLines[wl].length;
+                        targCol = INT_MAX;
+                    }
+                    WrappedToOriginal(wl, wc, &cursorLine, &cursorCol);
                 }
                 break;
             case GLFW_KEY_HOME:
@@ -1395,22 +1502,46 @@ default_handler:
                         cursorCol=0;
                     }
                 }
-                break;
-            case GLFW_KEY_UP:
-                if(targCol<0)targCol=cursorCol;
-                newLine=cursorLine;
-                if(ctrl)newLine=fmax(0,cursorLine-3);
-                else if(cursorLine>0)newLine=cursorLine-1;
-                cursorLine=newLine;
-                cursorCol=fmin(targCol,lines[cursorLine].length);
+                goalColumn = -1;
+                consecutiveEOLMoves = 0;
                 break;
             case GLFW_KEY_DOWN:
-                if(targCol<0)targCol=cursorCol;
-                newLine=cursorLine;
-                if(ctrl)newLine=fmin(numLines-1,cursorLine+3);
-                else if(cursorLine<numLines-1)newLine=cursorLine+1;
-                cursorLine=newLine;
-                cursorCol=fmin(targCol,lines[cursorLine].length);
+                if (goalColumn < 0)
+                    goalColumn = cursorCol;
+                wasAtEOL = (cursorCol == lines[cursorLine].length);
+                if (ctrl)
+                    cursorLine = MIN(cursorLine + 3, numLines - 1);
+                else if (cursorLine < numLines - 1)
+                    cursorLine++;
+                cursorCol = MIN(goalColumn, lines[cursorLine].length);
+                nowAtEOL = (cursorCol == lines[cursorLine].length);
+                if (wasAtEOL && nowAtEOL)
+                    consecutiveEOLMoves++;
+                else
+                    consecutiveEOLMoves = 0;
+                if (consecutiveEOLMoves >= 2) {
+                    cursorCol = lines[cursorLine].length;
+                    goalColumn = INT_MAX;
+                }
+                break;
+            case GLFW_KEY_UP:
+                if (goalColumn < 0)
+                    goalColumn = cursorCol;
+                wasAtEOL = (cursorCol == lines[cursorLine].length);
+                if (ctrl)
+                    cursorLine = MAX(cursorLine - 3, 0);
+                else if (cursorLine > 0)
+                    cursorLine--;
+                cursorCol = MIN(goalColumn, lines[cursorLine].length);
+                nowAtEOL = (cursorCol == lines[cursorLine].length);
+                if (wasAtEOL && nowAtEOL)
+                    consecutiveEOLMoves++;
+                else
+                    consecutiveEOLMoves = 0;
+                if (consecutiveEOLMoves >= 2) {
+                    cursorCol = lines[cursorLine].length;
+                    goalColumn = INT_MAX;
+                }
                 break;
             case GLFW_KEY_TAB:
                 if (IsSelValid()) DeleteSelection();
@@ -1458,6 +1589,18 @@ default_handler:
                 scroll.targetY=fmin(MaxScroll(),scroll.targetY+window.screen_height-lineHeight);
                 break;
             }
+            case GLFW_KEY_Z:
+                if (ctrl) {
+                    Undo();
+                    return;
+                }
+                break;
+            case GLFW_KEY_Y:
+                if (key == GLFW_KEY_Y) {
+                    Redo();
+                    return;
+                }
+                break;
             case GLFW_KEY_INSERT:insertMode=!insertMode;break;
             case GLFW_KEY_BACKSPACE:
                 if(IsSelValid())DeleteSelection();
@@ -1503,6 +1646,13 @@ default_handler:
             case GLFW_KEY_R:if(ctrl&&!showMinimap){showScrollbar=!showScrollbar;snprintf(statusMsg,sizeof(statusMsg),"Scrollbar = %s",showScrollbar?"ON":"OFF");}break;
             case GLFW_KEY_M: if(ctrl){ if(!showScrollbar){ showScrollbar = !showScrollbar; } showMinimap = !showMinimap; snprintf(statusMsg, sizeof(statusMsg), "Minimap = %s", showMinimap ? "ON" : "OFF"); } break;
             case GLFW_KEY_N:if(ctrl){showModeline=!showModeline;scroll.targetY=fmin(scroll.targetY,MaxScroll());}break;
+            case GLFW_KEY_P:
+                if(ctrl){
+                    autoParingEnabled = !autoParingEnabled;
+                    snprintf(statusMsg, sizeof(statusMsg), "Auto-pairing: %s", autoParingEnabled ? "ON" : "OFF");
+                    return;
+                }
+                break;
             case GLFW_KEY_S:
                 if(ctrl){
                     if(mods&GLFW_MOD_SHIFT)snprintf(statusMsg,sizeof(statusMsg),"Save As not implemented");
@@ -1550,8 +1700,15 @@ default_handler:
     if(key==GLFW_KEY_UP||key==GLFW_KEY_DOWN||key==GLFW_KEY_PAGE_UP||key==GLFW_KEY_PAGE_DOWN){
         if(!(key==GLFW_KEY_UP||key==GLFW_KEY_DOWN)||(!shift&&!ctrl))targCol=-1;
     }else targCol=-1;
-    if(wordWrap&&isFileDirty&&(key==GLFW_KEY_BACKSPACE||key==GLFW_KEY_DELETE||key==GLFW_KEY_ENTER||key==GLFW_KEY_TAB||(action==GLFW_PRESS&&isprint(key))))
+    if (wordWrap && isFileDirty && (
+        key == GLFW_KEY_BACKSPACE || 
+        key == GLFW_KEY_DELETE || 
+        key == GLFW_KEY_ENTER || 
+        key == GLFW_KEY_TAB || 
+        ((action == GLFW_PRESS || action == GLFW_REPEAT) && isprint(key))
+    )) {
         RecalculateWrappedLines();
+    }
 }
 
 void MouseCallback(GLFWwindow* win, int button, int action, int mods) {
@@ -1680,25 +1837,162 @@ void ScrollCallback(GLFWwindow* win, double x, double y) {
     if(scroll.smoothScroll) scroll.velocity = 0;
 }
 
+static const struct {
+    char open;
+    char close;
+} bracket_pairs[] = {
+    {'(', ')'},
+    {'[', ']'},
+    {'{', '}'},
+    {'<', '>'},
+    {'"', '"'},
+    {'\'', '\''},
+    {'`', '`'},
+};
+
 void CharCallback(GLFWwindow* win, unsigned int c) {
-    if (isprint(c)) {
-        const int MAX_LINE_EXTENSION = 3;
-        if (insertMode) {
-            InsertChar((char)c);
-        } else {
-            if (cursorCol < lines[cursorLine].length) {lines[cursorLine].text[cursorCol] = (char)c;cursorCol++;
-            } else {
-                if (lines[cursorLine].length < MAXTEXT - MAX_LINE_EXTENSION - 1) { lines[cursorLine].text[lines[cursorLine].length] = (char)c;lines[cursorLine].length++;cursorCol = lines[cursorLine].length; }
-            }
-        }
-        if (lines[cursorLine].length >= MAXTEXT - 1) {
-            lines[cursorLine].length = MAXTEXT - 1;
-            lines[cursorLine].text[lines[cursorLine].length] = '\0';
-        }
-    }
-    isFileDirty = true;
     if (lsp.active) {
         EditorLspCharHandler(c);
+    }
+    if (isprint(c)) {
+        if (IsSelValid() && autoParingEnabled) {
+            char closingBracket = 0;
+            bool shouldWrapSelection = false;
+            for (size_t i = 0; i < sizeof(bracket_pairs)/sizeof(bracket_pairs[0]); i++) {
+                if (bracket_pairs[i].open == c) {
+                    closingBracket = bracket_pairs[i].close;
+                    shouldWrapSelection = true;
+                    break;
+                }
+            }
+            if (!shouldWrapSelection) {
+                for (size_t i = 0; i < sizeof(bracket_pairs)/sizeof(bracket_pairs[0]); i++) {
+                    if (bracket_pairs[i].close == c) {
+                        closingBracket = c;
+                        c = bracket_pairs[i].open;
+                        shouldWrapSelection = true;
+                        break;
+                    }
+                }
+            }
+            if (shouldWrapSelection) {
+                int startLine = selStartLine, startCol = selStartCol;
+                int endLine = selEndLine, endCol = selEndCol;
+                int origCursorLine = cursorLine;
+                int origCursorCol = cursorCol;
+                if (startLine > endLine || (startLine == endLine && startCol > endCol)) {
+                    int tmp = startLine; startLine = endLine; endLine = tmp;
+                    tmp = startCol; startCol = endCol; endCol = tmp;
+                }
+                cursorLine = endLine;
+                cursorCol = endCol;
+                InsertChar(closingBracket);
+                cursorLine = startLine;
+                cursorCol = startCol;
+                InsertChar(c);
+                if (origCursorLine == startLine && origCursorCol == startCol) {
+                    cursorLine = startLine;
+                    cursorCol = startCol;
+                    selStartLine = startLine;
+                    selStartCol = startCol + 1;
+                    selEndLine = endLine;
+                    selEndCol = endCol + 1;
+                } else {
+                    cursorLine = endLine;
+                    cursorCol = endCol + 2;
+                    selStartLine = startLine;
+                    selStartCol = startCol + 1;
+                    selEndLine = endLine;
+                    selEndCol = endCol + 1;
+                }
+                if (wordWrap) {
+                    RecalculateWrappedLines();
+                }
+                isFileDirty = true;
+                isSelecting = true;
+                return;
+            }
+        }
+        if (IsSelValid()) DeleteSelection();
+        bool skipInsert = false;
+        if (insertMode && autoParingEnabled) {
+            bool isClosing = false;
+            bool isOpeningOrSame = false;
+            char closing = 0, opening = 0;
+            for (size_t i = 0; i < sizeof(bracket_pairs)/sizeof(bracket_pairs[0]); i++) {
+                if (bracket_pairs[i].close == c) {
+                    isClosing = true;
+                    opening = bracket_pairs[i].open;
+                } 
+                if (bracket_pairs[i].open == c) {
+                    isOpeningOrSame = true;
+                    closing = bracket_pairs[i].close;
+                }
+            }
+            if (isClosing) {
+                if (cursorCol < lines[cursorLine].length && 
+                    lines[cursorLine].text[cursorCol] == c) {
+                    cursorCol++;
+                    skipInsert = true;
+                }
+            }
+        }
+        if (insertMode) {
+            bool isOpening = false;
+            char closing = 0;
+            for (size_t i = 0; i < sizeof(bracket_pairs)/sizeof(bracket_pairs[0]); i++) {
+                if (bracket_pairs[i].open == c) {
+                    isOpening = true;
+                    closing = bracket_pairs[i].close;
+                    break;
+                }
+            }
+            int originalLength = lines[cursorLine].length;
+            if (isOpening) {
+                selStartLine = selEndLine = -1;
+                selStartCol = selEndCol = -1;
+                isSelecting = false;
+            }
+            if (!skipInsert) {
+                if (insertMode) {
+                    int newLengthAfterOpen = 0;
+                    InsertChar((char)c);
+                    newLengthAfterOpen = lines[cursorLine].length;
+                    if (newLengthAfterOpen > originalLength) {
+                        if (isOpening && autoParingEnabled) {
+                            InsertChar(closing);
+                            if (lines[cursorLine].length > newLengthAfterOpen) {
+                                cursorCol--;
+                                if (numAutoPairs < MAX_AUTO_PAIRS) {
+                                    autoPairs[numAutoPairs].line = cursorLine;
+                                    autoPairs[numAutoPairs].col = cursorCol - 1;
+                                    autoPairs[numAutoPairs].open = (char)c;
+                                    autoPairs[numAutoPairs].close = closing;
+                                    autoPairs[numAutoPairs].wasAutoInserted = true;
+                                    numAutoPairs++;
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    if (cursorCol < lines[cursorLine].length) {
+                        lines[cursorLine].text[cursorCol] = (char)c;
+                        cursorCol++;
+                    } else {
+                        if (lines[cursorLine].length < MAXTEXT - 1) {
+                            lines[cursorLine].text[lines[cursorLine].length] = (char)c;
+                            lines[cursorLine].length++;
+                            cursorCol = lines[cursorLine].length;
+                        }
+                    }
+                    if (lines[cursorLine].length >= MAXTEXT - 1) {
+                        lines[cursorLine].length = MAXTEXT - 1;
+                        lines[cursorLine].text[lines[cursorLine].length] = '\0';
+                    }
+                }
+                isFileDirty = true;
+            }
+        }
     }
 }
 
@@ -1712,6 +2006,7 @@ void DrawFps() {
 void Close() {
     LspCleanup();
     SyntaxCleanup();
+    ClearUndoHistory();
     FreeLines();
 }
 
@@ -1764,6 +2059,7 @@ int Init(int argc, char *argv[]) {
         free(initialText);
     }
     LspInit();
+    UndoSystemInit();
     glfwSetCharCallback(window.w, CharCallback);
     glfwSetKeyCallback(window.w, KeyCallback);
     glfwSetScrollCallback(window.w, ScrollCallback);

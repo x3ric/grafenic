@@ -28,6 +28,10 @@ need() {
 need clang
 need fzf
 
+need glfw
+need glew
+need glu
+
 clean() {
     echo -e "rm -rf ./$TARGET ./build/"
     rm -rf ./$TARGET ./build/
@@ -47,7 +51,7 @@ uninstall() {
 }
 
 fzf-splitted () {
-    if [[ -n "$TMUX" ]]; then
+    if command -v tmux >/dev/null 2>&1 && [[ -z "$TMUX" ]]; then
         fzf --color=16 --reverse --ansi "$@"
     else
         fzf-tmux --color=16 -x --height ${FZF_TMUX_HEIGHT:-40%} --reverse --cycle --ansi "$@"
