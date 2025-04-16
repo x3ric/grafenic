@@ -44,25 +44,23 @@ typedef struct {
 #define MAX_BRACKET_PAIRS 256
 
 typedef struct {
-    Color *colors;          // Color array for text
-    int maxColors;          // Max size of color array
-    bool initialized;       // Initialization flag
-    TSParser *parser;       // Tree-sitter parser
-    TSTree *tree;           // Parsed syntax tree
-    char *lastText;         // Last parsed text cache
-    int lastTextLen;        // Length of cached text
-    const char *language;   // Current language name
-    LanguageLib *languages; // Available languages
-    int numLanguages;       // Number of languages
-    Color defaultColor;     // Default text color
-    DrawTextFunc drawFunc;  // Function to draw text
-    void* fontPtr;          // Font pointer for drawing
-    float fontSize;         // Font size for drawing
-    void *userData;         // User data for draw function
-    NodeColorMap colorMap;  // Node type to color mapping
-    bool debugMode;         // Enable debug output
-    
-    // Bracket tracking
+    Color *colors;                  // Color array for text
+    int maxColors;                  // Max size of color array
+    bool initialized;               // Initialization flag
+    TSParser *parser;               // Tree-sitter parser
+    TSTree *tree;                   // Parsed syntax tree
+    char *lastText;                 // Last parsed text cache
+    int lastTextLen;                // Length of cached text
+    const char *language;           // Current language name
+    LanguageLib *languages;         // Available languages
+    int numLanguages;               // Number of languages
+    Color defaultColor;             // Default text color
+    DrawTextFunc drawFunc;          // Function to draw text
+    void* fontPtr;                  // Font pointer for drawing
+    float fontSize;                 // Font size for drawing
+    void *userData;                 // User data for draw function
+    NodeColorMap colorMap;          // Node type to color mapping
+    bool debugMode;                 // Enable debug output
     BracketPair bracketPairs[256];  // Store matched bracket pairs
     int bracketPairCount;           // Number of tracked pairs
 } SyntaxHighlighter;

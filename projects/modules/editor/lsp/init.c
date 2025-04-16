@@ -11,6 +11,7 @@
 #include <time.h>
 #include <ctype.h>
 #include <libgen.h>
+
 LspClient lsp = {0};
 static bool lspInitialized = false;
 double lastTypingTime = 0;
@@ -24,111 +25,76 @@ static int prevLine = -1;
 static int prevCol = -1;
 static char prevFilename[MAX_FILENAME] = {0};
 static bool isDefinitionJumped = false;
-char* LspEscapeJson(const char* text) {
-    if (!text) return NULL;
-    size_t len = strlen(text);
-    char* escaped = malloc(len * 2 + 1);
-    if (!escaped) return NULL;
-    size_t j = 0;
-    for (size_t i = 0; i < len; i++) {
-        if (text[i] == '\\' || text[i] == '"' || text[i] == '\n' || text[i] == '\r') {
-            escaped[j++] = '\\';
-            if (text[i] == '\n') { escaped[j++] = 'n'; continue; } 
-            else if (text[i] == '\r') { escaped[j++] = 'r'; continue; }
-        }
-        escaped[j++] = text[i];
+
+#define LSP_HOVER_MAX 16384
+#define LSP_MAX_HOVER_LINES 500
+
+typedef enum {
+    COLOR_DEFAULT,
+    COLOR_KEYWORD,
+    COLOR_TYPE,
+    COLOR_FUNCTION,
+    COLOR_VARIABLE,
+    COLOR_STRING,
+    COLOR_COMMENT,
+    COLOR_EMPHASIS,
+    COLOR_HEADER,
+    COLOR_CODE,
+    COLOR_PARAMETER,
+    COLOR_MARKDOWN_LINK
+} ContentType;
+
+Color GetContentTypeColor(ContentType type) {
+    switch (type) {
+        case COLOR_KEYWORD:       return Color01;
+        case COLOR_TYPE:          return Color02;
+        case COLOR_FUNCTION:      return Color16;
+        case COLOR_VARIABLE:      return Color23;
+        case COLOR_STRING:        return Color28;
+        case COLOR_COMMENT:       return Color08;
+        case COLOR_EMPHASIS:      return Color14;
+        case COLOR_HEADER:        return Color22;
+        case COLOR_CODE:          return Color10;
+        case COLOR_PARAMETER:     return Color24;
+        case COLOR_MARKDOWN_LINK: return Color12;
+        default:                  return Color07;
     }
-    escaped[j] = '\0';
-    return escaped;
 }
-char* LspFindJsonValue(const char* json, const char* key) {
-    if (!json || !key) return NULL;
-    char searchKey[LSP_JSON_TOKEN_MAX];
-    snprintf(searchKey, sizeof(searchKey), "\"%s\"", key);
-    const char* keyPos = strstr(json, searchKey);
-    if (!keyPos) return NULL;
-    keyPos += strlen(searchKey);
-    const char* colon = strchr(keyPos, ':');
-    if (!colon) return NULL;
-    const char* valueStart = colon + 1;
-    while (*valueStart && isspace(*valueStart)) valueStart++;
-    if (!*valueStart) return NULL;
-    return (char*)valueStart;
-}
-char* LspFindJsonArray(const char* json, const char* key) {
-    char* value = LspFindJsonValue(json, key);
-    if (!value || *value != '[') return NULL;
-    return value;
-}
-int LspJsonArrayLength(const char* array) {
-    if (!array || *array != '[') return 0;
-    int count = 0, depth = 0;
-    bool inString = false, itemStarted = false;
-    for (const char* p = array + 1; *p; p++) {
-        if (inString && p[-1] == '\\') continue;
-        switch (*p) {
-            case '"': inString = !inString; break;
-            case '[': case '{': if (!inString) depth++; break;
-            case ']': case '}': if (!inString) { depth--; if (depth < 0) return count; } break;
-            case ',': if (!inString && depth == 0) { count++; itemStarted = false; } break;
-            default: if (!inString && depth == 0 && !isspace(*p) && !itemStarted) itemStarted = true; break;
-        }
+
+ContentType CategorizeContent(const char* text) {
+    const char* keywords[] = {
+        "class", "struct", "enum", "interface", "typedef", 
+        "public", "private", "protected", "static", "const", 
+        "virtual", "inline", "namespace", "template"
+    };
+    const char* types[] = {
+        "int", "char", "float", "double", "void", "bool", 
+        "size_t", "unsigned", "signed", "long", "short"
+    };
+    const char* functions[] = {
+        "function", "method", "constructor", "destructor"
+    };
+    for (size_t i = 0; i < sizeof(keywords)/sizeof(keywords[0]); i++) {
+        if (strstr(text, keywords[i])) return COLOR_KEYWORD;
     }
-    return count + (itemStarted ? 1 : 0);
-}
-char* LspJsonArrayItem(const char* array, int index) {
-    if (!array || *array != '[' || index < 0) return NULL;
-    const char* p = array + 1;
-    while (isspace(*p)) p++;
-    int currentIndex = 0, depth = 0;
-    bool inString = false;
-    while (*p) {
-        if (currentIndex == index) return (char*)p;
-        if (inString && p[-1] == '\\') { p++; continue; }
-        switch (*p) {
-            case '"': inString = !inString; break;
-            case '[': case '{': if (!inString) depth++; break;
-            case ']': case '}': if (!inString) depth--; break;
-            case ',': if (!inString && depth == 0) { currentIndex++; p++; while (isspace(*p)) p++; continue; } break;
-        }
-        if (*p == ']' && !inString && depth < 0) break;
-        p++;
+    for (size_t i = 0; i < sizeof(types)/sizeof(types[0]); i++) {
+        if (strstr(text, types[i])) return COLOR_TYPE;
     }
-    return NULL;
-}
-char* LspJsonExtractString(const char* json, char* buffer, size_t bufferSize) {
-    if (!json || !buffer || bufferSize == 0) return NULL;
-    buffer[0] = '\0';
-    const char* start = strchr(json, '"');
-    if (!start) return NULL;
-    start++;
-    size_t i = 0;
-    while (*start && *start != '"' && i < bufferSize - 1) {
-        if (*start == '\\' && *(start + 1)) {
-            start++;
-            if (i >= bufferSize - 1) break;
-            switch (*start) {
-                case 'n': buffer[i++] = '\n'; break;
-                case 'r': buffer[i++] = '\r'; break;
-                case 't': buffer[i++] = '\t'; break;
-                case '\\': buffer[i++] = '\\'; break;
-                case '"': buffer[i++] = '"'; break;
-                default: buffer[i++] = *start; break;
-            }
-        } else {
-            buffer[i++] = *start;
-        }
-        start++;
+    for (size_t i = 0; i < sizeof(functions)/sizeof(functions[0]); i++) {
+        if (strstr(text, functions[i])) return COLOR_FUNCTION;
     }
-    buffer[i] = '\0';
-    return buffer;
+    if (strstr(text, "@param") || strstr(text, "parameter")) return COLOR_PARAMETER;
+    if (strstr(text, "//") || strstr(text, "/*")) return COLOR_COMMENT;
+    if (strstr(text, "\"")) return COLOR_STRING;
+    if (strstr(text, "**") || strstr(text, "__")) return COLOR_EMPHASIS;
+    if (strstr(text, "#")) return COLOR_HEADER;
+    if (strstr(text, "`")) return COLOR_CODE;
+    if (strstr(text, "[[") || strstr(text, "]]")) return COLOR_MARKDOWN_LINK;
+    return COLOR_DEFAULT;
 }
-int LspJsonExtractInt(const char* json, int defaultValue) {
-    if (!json) return defaultValue;
-    while (*json && isspace(*json)) json++;
-    if (!*json || !isdigit(*json)) return defaultValue;
-    return atoi(json);
-}
+
+#include "modules/editor/lsp/json.c"
+
 void LspCreateUri(const char* filepath, char* uri, size_t maxLen) {
     char absPath[PATH_MAX];
     if (filepath[0] != '/') {
@@ -140,6 +106,7 @@ void LspCreateUri(const char* filepath, char* uri, size_t maxLen) {
     }
     snprintf(uri, maxLen, "file://%s", absPath);
 }
+
 void LspSend(const char* message, int length) {
     if (!lsp.active) return;
     fd_set write_fds;
@@ -198,6 +165,7 @@ char* LspReceive(void) {
     lsp.buffer[lsp.bufferLen] = '\0';
     return message;
 }
+
 bool LspInitialize(void) {
     char initRequest[1024];
     int reqLen = snprintf(initRequest, sizeof(initRequest), 
@@ -240,6 +208,7 @@ bool LspInitialize(void) {
     free(response);
     return success;
 }
+
 void CreateCompilationDatabase() {
     const char* dbPath = "compile_commands.json";
     if (access(dbPath, F_OK) == 0) {
@@ -265,6 +234,7 @@ void CreateCompilationDatabase() {
     fclose(fp);
     fprintf(stderr, "Created compilation database at %s/compile_commands.json\n", cwd);
 }
+
 void SetupLspWorkspace() {
     if (!lsp.active || !lspInitialized) return;
     char workspaceRoot[PATH_MAX];
@@ -287,6 +257,7 @@ void SetupLspWorkspace() {
     LspSend(header, strlen(header));
     LspSend(workspaceFolders, len);
 }
+
 bool FindProjectConfig(char* configPath, size_t maxLen) {
     const char* configLocations[] = {
         ".clangd", 
@@ -325,6 +296,7 @@ bool FindProjectConfig(char* configPath, size_t maxLen) {
     }
     return false;
 }
+
 bool LspStart(const char* server, const char* langId) {
     if (lsp.active) LspStop();
     memset(&lsp, 0, sizeof(lsp));
@@ -345,10 +317,7 @@ bool LspStart(const char* server, const char* langId) {
         dup2(lsp.inPipe[0], STDIN_FILENO); close(lsp.inPipe[0]);
         dup2(lsp.outPipe[1], STDOUT_FILENO); close(lsp.outPipe[1]);
         if (strcmp(langId, "c") == 0 || strcmp(langId, "cpp") == 0) {
-            // Attempt to find an existing config first
             char configPath[PATH_MAX] = ".clangd";
-            
-            // If .clangd doesn't exist, create it
             if (access(configPath, F_OK) != 0) {
                 FILE* config = fopen(configPath, "w");
                 if (config) {
@@ -366,7 +335,6 @@ bool LspStart(const char* server, const char* langId) {
                     fclose(config);
                 }
             }
-
             execl(server, server, 
                   "--log=verbose", 
                   "--background-index", 
@@ -408,6 +376,7 @@ bool LspStart(const char* server, const char* langId) {
     snprintf(statusMsg, sizeof(statusMsg), "LSP: Connected to %s", langId);
     return true;
 }
+
 void LspStop(void) {
     if (!lsp.active) return;
     char req[128];
@@ -437,6 +406,7 @@ void LspStop(void) {
     lsp.completions.active = false;
     lsp.hoverInfo.active = false;
 }
+
 void LspNotifyDidOpen(const char* filepath, const char* text) {
     if (!lsp.active || !lspInitialized) return;
     LspCreateUri(filepath, lsp.uri, sizeof(lsp.uri));
@@ -463,6 +433,7 @@ void LspNotifyDidOpen(const char* filepath, const char* text) {
     free(escapedText);
     free(didOpenNotification);
 }
+
 void LspNotifyDidChange(const char* filepath, const char* text) {
     if (!lsp.active || !lspInitialized) return;
     LspCreateUri(filepath, lsp.uri, sizeof(lsp.uri));
@@ -491,6 +462,7 @@ void LspNotifyDidChange(const char* filepath, const char* text) {
     free(escapedText);
     free(didChangeNotification);
 }
+
 void LspNotifyDidSave(const char* filepath) {
     if (!lsp.active || !lspInitialized) return;
     LspCreateUri(filepath, lsp.uri, sizeof(lsp.uri));
@@ -509,6 +481,7 @@ void LspNotifyDidSave(const char* filepath) {
     LspSend(header, strlen(header));
     LspSend(didSaveNotification, len);
 }
+
 void LspProcessCompletionResponse(const char* json) {
     char* resultValue = LspFindJsonValue(json, "result");
     if (!resultValue) return;
@@ -552,6 +525,7 @@ void LspProcessCompletionResponse(const char* json) {
         lsp.completions.count++;
     }
 }
+
 void LspProcessDiagnostics(const char* json) {
     lsp.diagnosticCount = 0;
     char* paramsValue = LspFindJsonValue(json, "params");
@@ -584,6 +558,7 @@ void LspProcessDiagnostics(const char* json) {
         LspJsonExtractString(message, diagnostic->message, LSP_MAX_MSG_LEN);
     }
 }
+
 void LspRequestCompletion(int line, int character) {
     if (!lsp.active || !lspInitialized) return;
     char request[1024];
@@ -603,6 +578,7 @@ void LspRequestCompletion(int line, int character) {
     lsp.completions.startLine = line;
     lsp.completions.startCol = character;
 }
+
 void LspRequestHover(int line, int character) {
     if (!lsp.active || !lspInitialized) return;
     char request[1024];
@@ -621,69 +597,7 @@ void LspRequestHover(int line, int character) {
     lsp.hoverLine = line;
     lsp.hoverCol = character;
 }
-#define LSP_HOVER_MAX 16384
-#define LSP_MAX_HOVER_LINES 500
-typedef enum {
-    COLOR_DEFAULT,
-    COLOR_KEYWORD,
-    COLOR_TYPE,
-    COLOR_FUNCTION,
-    COLOR_VARIABLE,
-    COLOR_STRING,
-    COLOR_COMMENT,
-    COLOR_EMPHASIS,
-    COLOR_HEADER,
-    COLOR_CODE,
-    COLOR_PARAMETER,
-    COLOR_MARKDOWN_LINK
-} ContentType;
-Color GetContentTypeColor(ContentType type) {
-    switch (type) {
-        case COLOR_KEYWORD:       return Color01;
-        case COLOR_TYPE:          return Color02;
-        case COLOR_FUNCTION:      return Color16;
-        case COLOR_VARIABLE:      return Color23;
-        case COLOR_STRING:        return Color28;
-        case COLOR_COMMENT:       return Color08;
-        case COLOR_EMPHASIS:      return Color14;
-        case COLOR_HEADER:        return Color22;
-        case COLOR_CODE:          return Color10;
-        case COLOR_PARAMETER:     return Color24;
-        case COLOR_MARKDOWN_LINK: return Color12;
-        default:                  return Color07;
-    }
-}
-ContentType CategorizeContent(const char* text) {
-    const char* keywords[] = {
-        "class", "struct", "enum", "interface", "typedef", 
-        "public", "private", "protected", "static", "const", 
-        "virtual", "inline", "namespace", "template"
-    };
-    const char* types[] = {
-        "int", "char", "float", "double", "void", "bool", 
-        "size_t", "unsigned", "signed", "long", "short"
-    };
-    const char* functions[] = {
-        "function", "method", "constructor", "destructor"
-    };
-    for (size_t i = 0; i < sizeof(keywords)/sizeof(keywords[0]); i++) {
-        if (strstr(text, keywords[i])) return COLOR_KEYWORD;
-    }
-    for (size_t i = 0; i < sizeof(types)/sizeof(types[0]); i++) {
-        if (strstr(text, types[i])) return COLOR_TYPE;
-    }
-    for (size_t i = 0; i < sizeof(functions)/sizeof(functions[0]); i++) {
-        if (strstr(text, functions[i])) return COLOR_FUNCTION;
-    }
-    if (strstr(text, "@param") || strstr(text, "parameter")) return COLOR_PARAMETER;
-    if (strstr(text, "//") || strstr(text, "/*")) return COLOR_COMMENT;
-    if (strstr(text, "\"")) return COLOR_STRING;
-    if (strstr(text, "**") || strstr(text, "__")) return COLOR_EMPHASIS;
-    if (strstr(text, "#")) return COLOR_HEADER;
-    if (strstr(text, "`")) return COLOR_CODE;
-    if (strstr(text, "[[") || strstr(text, "]]")) return COLOR_MARKDOWN_LINK;
-    return COLOR_DEFAULT;
-}
+
 void LspProcessHoverResponse(const char* json) {
     if (!json) {
         lsp.hoverInfo.active = false;
@@ -768,6 +682,7 @@ void LspProcessHoverResponse(const char* json) {
         lsp.hoverInfo.height = 0;
     }
 }
+
 void LspRequestDefinition(int line, int character) {
     if (!lsp.active || !lspInitialized) {
         snprintf(statusMsg, sizeof(statusMsg), "LSP not ready");
@@ -798,6 +713,7 @@ void LspRequestDefinition(int line, int character) {
     lsp.definitionRequestTime = window.time;
     fprintf(stderr, "Requesting definition at line %d, character %d\n", line, character);
 }
+
 void UriDecode(char *dst, const char *src, size_t maxLen) {
     if (!dst || !src || maxLen == 0) return;
     size_t i = 0, j = 0;
@@ -826,6 +742,7 @@ void UriDecode(char *dst, const char *src, size_t maxLen) {
     dst[j] = '\0';
     fprintf(stderr, "Decoded path: %s\n", dst);
 }
+
 bool NormalizeFilePath(const char* origPath, char* normPath, size_t maxLen) {
     if (!origPath || !normPath || maxLen == 0) return false;
     char tempPath[PATH_MAX] = {0};
@@ -887,6 +804,7 @@ bool NormalizeFilePath(const char* origPath, char* normPath, size_t maxLen) {
     strncpy(normPath, origPath, maxLen - 1);
     return false;
 }
+
 char* FindRootDirectory(void) {
     static char rootDir[PATH_MAX] = {0};
     if (rootDir[0] != '\0') return rootDir;
@@ -915,6 +833,7 @@ char* FindRootDirectory(void) {
     strncpy(rootDir, cwd, sizeof(rootDir) - 1);
     return rootDir;
 }
+
 bool FindFile(const char* filename, char* foundPath, size_t maxLen) {
     if (filename[0] == '/' && access(filename, F_OK) == 0) {
         strncpy(foundPath, filename, maxLen - 1);
@@ -961,6 +880,7 @@ bool FindFile(const char* filename, char* foundPath, size_t maxLen) {
     }
     return false;
 }
+
 bool OpenFileFromDefinition(const char* filePath, int line, int column) {
     char decodedPath[PATH_MAX] = {0};
     UriDecode(decodedPath, filePath, sizeof(decodedPath));
@@ -1056,641 +976,9 @@ bool OpenFileFromDefinition(const char* filePath, int line, int column) {
     snprintf(statusMsg, sizeof(statusMsg), "Navigated to %s:%d", baseName, line + 1);
     return true;
 }
-void LspDrawDiagnostics() {
-    if (!lsp.active || lsp.diagnosticCount == 0) return;
-    int startLine = (int)(scroll.currentY / lineHeight);
-    int endLine = startLine + (window.screen_height / lineHeight) + 1;
-    int textX = showLineNumbers ? gutterWidth : 0;
-    for (int i = 0; i < lsp.diagnosticCount; i++) {
-        LspDiagnostic* diag = &lsp.diagnostics[i];
-        if (diag->line < startLine || diag->line >= endLine || diag->line >= numLines) 
-            continue;
-        const char* lineText = lines[diag->line].text;
-        int lineLen = lines[diag->line].length;
-        int diagLineY = (diag->line * lineHeight) - (int)scroll.currentY;
-        int startCol = fmax(0, fmin(diag->startCol, lineLen));
-        int endCol = fmax(startCol, fmin(diag->endCol, lineLen));
-        int startX = textX;
-        for (int c = 0; c < startCol; c++) {
-            char charStr[2] = {lineText[c], '\0'};
-            startX += GetTextSizeCached(font, fontSize, charStr).width;
-        }
-        int endX = startX;
-        for (int c = startCol; c < endCol; c++) {
-            char charStr[2] = {lineText[c], '\0'};
-            endX += GetTextSizeCached(font, fontSize, charStr).width;
-        }
-        if (startCol == endCol) {
-            endX = startX + GetTextSizeCached(font, fontSize, "m").width;
-        }
-        startX -= (int)scroll.currentX;
-        endX -= (int)scroll.currentX;
-        Color underlineColor;
-        switch (diag->severity) {
-            case 1: underlineColor = Color19; break; 
-            case 2: underlineColor = Color18; break; 
-            case 3: underlineColor = Color20; break; 
-            case 4: underlineColor = Color03; break; 
-            default: underlineColor = Color08; break;
-        }
-        float lineThickness = fmax(1.0f, (fontSize / 20.0f));
-        float yPos = diagLineY + lineHeight + lineThickness - 1;
-        float dashLength = fmax(3.0f, fontSize / 6.0f);
-        float gapLength = fmax(2.0f, fontSize / 10.0f);
-        float currentX = startX;
-        while (currentX < endX) {
-            float segmentEnd = fmin(currentX + dashLength, endX);
-            DrawLine(currentX, yPos, segmentEnd, yPos, lineThickness, underlineColor);
-            currentX = segmentEnd + gapLength;
-        }
-    }
-    FlushRectBatch();
-    FlushTextBatch();
-    for (int i = 0; i < lsp.diagnosticCount; i++) {
-        LspDiagnostic* diag = &lsp.diagnostics[i];
-        if (diag->line < startLine || diag->line >= endLine || diag->line >= numLines) continue;
-        const char* lineText = lines[diag->line].text;
-        int lineLen = lines[diag->line].length;
-        int diagLineY = (diag->line * lineHeight) - (int)scroll.currentY;
-        int startCol = fmax(0, fmin(diag->startCol, lineLen));
-        int endCol = fmax(startCol, fmin(diag->endCol, lineLen));
-        int startX = textX;
-        for (int c = 0; c < startCol; c++) {
-            char charStr[2] = {lineText[c], '\0'};
-            startX += GetTextSizeCached(font, fontSize, charStr).width;
-        }
-        int endX = startX;
-        if (startCol == endCol) {
-            endX = startX + GetTextSizeCached(font, fontSize, "m").width;
-        } else {
-            for (int c = startCol; c < endCol; c++) {
-                char charStr[2] = {lineText[c], '\0'};
-                endX += GetTextSizeCached(font, fontSize, charStr).width;
-            }
-        }
-        startX -= (int)scroll.currentX;
-        endX -= (int)scroll.currentX;
-        bool isHovered = (
-            (mouse.x >= startX && mouse.x <= endX && 
-             mouse.y >= diagLineY && mouse.y <= diagLineY + lineHeight) ||
-            (mouse.x <= textX && mouse.x >= textX - 20 && 
-             mouse.y >= diagLineY && mouse.y <= diagLineY + lineHeight)
-        );
-        if (isHovered) {
-            Color diagColor;
-            const char* sevLabel;
-            switch (diag->severity) {
-                case 1: diagColor = Color19; sevLabel = "Error"; break;
-                case 2: diagColor = Color18; sevLabel = "Warning"; break;
-                case 3: diagColor = Color20; sevLabel = "Info"; break;
-                default: diagColor = Color08; sevLabel = "Note"; break;
-            }
-            float tooltipFontSize = fontSize * 0.78f;
-            int padding = (int)(fontSize * 0.3f);
-            char headerText[256];
-            snprintf(headerText, sizeof(headerText), "%s at Line %d", 
-                     sevLabel, diag->line + 1);
-            const char* msg = diag->message ? diag->message : "No description available";
-            int msgLen = strlen(msg);
-            TextSize headerSize = GetTextSizeCached(font, tooltipFontSize, headerText);
-            int maxLineWidth = headerSize.width;
-            int tempPos = 0;
-            int charWidth = (int)(tooltipFontSize * 0.5f);
-            int maxCharsPerLine = (int)(fontSize * 25.0f) / charWidth;
-            while (tempPos < msgLen) {
-                int lineEnd = tempPos;
-                int lineLen = 0;
-                while (lineEnd < msgLen && lineLen < maxCharsPerLine && msg[lineEnd] != '\n') {
-                    lineEnd++;
-                    lineLen++;
-                }
-                char tempBuf[512] = {0};
-                strncpy(tempBuf, msg + tempPos, lineLen);
-                tempBuf[lineLen] = '\0';
-                TextSize lineSize = GetTextSizeCached(font, tooltipFontSize, tempBuf);
-                if (lineSize.width > maxLineWidth) {
-                    maxLineWidth = lineSize.width;
-                }
-                tempPos = lineEnd;
-                if (tempPos < msgLen && msg[tempPos] == '\n') {
-                    tempPos++;
-                }
-            }
-            int tooltipWidth = maxLineWidth + padding * 2 + (int)(fontSize * 2.0f);
-            tooltipWidth = fmax(tooltipWidth, (int)(fontSize * 18.0f));
-            tooltipWidth = fmin(tooltipWidth, (int)(fontSize * 35.0f));
-            tooltipWidth = fmin(tooltipWidth, window.screen_width - 20);
-            int contentWidth = tooltipWidth - padding * 2;
-            int charsPerLine = contentWidth / charWidth;
-            int lineCount = 0;
-            tempPos = 0;
-            while (tempPos < msgLen) {
-                int lineLen = fmin(msgLen - tempPos, charsPerLine);
-                for (int i = 0; i < lineLen; i++) {
-                    if (msg[tempPos + i] == '\n') {
-                        lineLen = i + 1;
-                        break;
-                    }
-                }
-                if (tempPos + lineLen < msgLen && lineLen == charsPerLine) {
-                    int j = lineLen;
-                    while (j > 0 && msg[tempPos + j] != ' ' && msg[tempPos + j] != '\n') {
-                        j--;
-                    }
-                    if (j > 0) lineLen = j + 1;
-                }
-                lineCount++;
-                tempPos += lineLen;
-                while (tempPos < msgLen && (msg[tempPos] == ' ' || msg[tempPos] == '\n')) {
-                    tempPos++;
-                }
-            }
-            int headerHeight = (int)(tooltipFontSize * 1.3f);
-            int lineHeight = (int)(tooltipFontSize * 1.05f);
-            int tooltipHeight = headerHeight + (lineHeight * lineCount) + padding * 2;
-            int maxHeightAllowed = window.screen_height - 20;
-            if (tooltipHeight > maxHeightAllowed) {
-                tooltipHeight = maxHeightAllowed;
-                lineCount = (tooltipHeight - headerHeight - padding * 2) / lineHeight;
-            }
-            int tooltipX = mouse.x + (int)(fontSize * 0.3f);
-            int tooltipY;
-            if (mouse.y < window.screen_height / 2) {
-                tooltipY = diagLineY + lineHeight + 2;
-            } else {
-                tooltipY = diagLineY - tooltipHeight - 2;
-            }
-            if (tooltipX + tooltipWidth > window.screen_width)
-                tooltipX = window.screen_width - tooltipWidth - 5;
-            if (tooltipX < 5)
-                tooltipX = 5;
-            if (tooltipY + tooltipHeight > window.screen_height)
-                tooltipY = window.screen_height - tooltipHeight - 5;
-            if (tooltipY < 5)
-                tooltipY = 5;
-            DrawRectBatch(tooltipX, tooltipY, tooltipWidth, tooltipHeight, Color30);
-            DrawRectBorder(tooltipX, tooltipY, tooltipWidth, tooltipHeight, 1, diagColor);
-            DrawRectBatch(tooltipX, tooltipY, tooltipWidth, headerHeight, diagColor);
-            DrawTextBatch(
-                tooltipX + padding,
-                tooltipY + (headerHeight - tooltipFontSize) / 2,
-                font, 
-                tooltipFontSize, 
-                headerText, 
-                Color15
-            );
-            int contentX = tooltipX + padding;
-            int contentY = tooltipY + headerHeight + padding/2;
-            int linesDrawn = 0;
-            int pos = 0;
-            while (pos < msgLen && linesDrawn < lineCount) {
-                while (pos < msgLen && (msg[pos] == ' ' || msg[pos] == '\n')) {
-                    pos++;
-                }
-                if (pos >= msgLen) break;
-                int lineLen = fmin(msgLen - pos, charsPerLine);
-                for (int i = 0; i < lineLen; i++) {
-                    if (msg[pos + i] == '\n') {
-                        lineLen = i;
-                        break;
-                    }
-                }
-                if (pos + lineLen < msgLen && lineLen == charsPerLine) {
-                    int j = lineLen;
-                    while (j > 0 && msg[pos + j] != ' ') {
-                        j--;
-                    }
-                    if (j > 0) {
-                        lineLen = j;
-                    }
-                }
-                if (lineLen > 0) {
-                    char lineBuf[512] = {0};
-                    strncpy(lineBuf, msg + pos, lineLen);
-                    lineBuf[lineLen] = '\0';
-                    int end = lineLen - 1;
-                    while (end >= 0 && (lineBuf[end] == ' ' || lineBuf[end] == '\t')) {
-                        lineBuf[end--] = '\0';
-                    }
-                    DrawTextBatch(
-                        contentX,
-                        contentY + (linesDrawn * lineHeight),
-                        font,
-                        tooltipFontSize,
-                        lineBuf,
-                        Color15
-                    );
-                    linesDrawn++;
-                }
-                pos += lineLen;
-                if (pos < msgLen && msg[pos] == '\n') {
-                    pos++;
-                }
-                while (pos < msgLen && msg[pos] == ' ') {
-                    pos++;
-                }
-                if (lineLen <= 0) break;
-            }
-        }
-    }
-    FlushRectBatch();
-    FlushTextBatch();
-}
-void LspDrawCompletions() {
-    if (!lsp.completions.active || lsp.completions.count == 0) return;
-    static double completionStartTime = 0;
-    static bool isFirstShow = true;
-    if (isFirstShow) {
-        completionStartTime = window.time;
-        isFirstShow = false;
-        return;
-    }
-    if (window.time - completionStartTime < 0.1) return;
-    float completionFontSize = fontSize * 0.95f;
-    float detailFontSize = fontSize * 0.85f;
-    int itemHeight = (int)(fontSize * 1.3f);
-    int padding = (int)(fontSize * 0.5f);
-    int iconWidth = (int)(fontSize * 1.5f);
-    int maxWidth = (int)(window.screen_width * 0.4f);
-    int cursorX, cursorY;
-    if (wordWrap) {
-        int wl, wc;
-        OriginalToWrapped(lsp.completions.startLine, lsp.completions.startCol, &wl, &wc);
-        cursorY = wl * lineHeight - scroll.currentY;
-    } else {
-        cursorY = lsp.completions.startLine * lineHeight - scroll.currentY;
-    }
-    int textX = showLineNumbers ? gutterWidth : 0;
-    cursorX = textX;
-    if (lsp.completions.startLine < numLines) {
-        for (int i = 0; i < lsp.completions.startCol && i < lines[lsp.completions.startLine].length; i++) {
-            char charStr[2] = {lines[lsp.completions.startLine].text[i], '\0'};
-            TextSize size = GetTextSizeCached(font, fontSize, charStr);
-            cursorX += size.width;
-        }
-    }
-    cursorX -= scroll.currentX;
-    int popupWidth = 0;
-    for (int i = 0; i < lsp.completions.count; i++) {
-        TextSize labelSize = GetTextSizeCached(font, completionFontSize, lsp.completions.items[i].label);
-        int itemWidth = labelSize.width + iconWidth + padding * 3;
-        if (lsp.completions.items[i].detail[0] != '\0') {
-            TextSize detailSize = GetTextSizeCached(font, detailFontSize, lsp.completions.items[i].detail);
-            itemWidth += detailSize.width + padding;
-        }
-        if (itemWidth > popupWidth) popupWidth = itemWidth;
-    }
-    popupWidth = fmax(200, fmin(maxWidth, popupWidth));
-    int maxVisibleItems = 10;
-    int visibleItems = fmin(maxVisibleItems, lsp.completions.count);
-    int popupHeight = visibleItems * itemHeight + padding * 2;
-    int hintHeight = (int)(fontSize * 1.2f);
-    popupHeight += hintHeight;
-    int popupX = cursorX;
-    int popupY = cursorY + lineHeight + 2;
-    if (popupX + popupWidth > window.screen_width) 
-        popupX = window.screen_width - popupWidth - 5;
-    if (popupX < 0) 
-        popupX = 0;
-    if (popupY + popupHeight > window.screen_height) 
-        popupY = cursorY - popupHeight - 2;
-    if (popupY < 0) 
-        popupY = 0;
-    DrawRectBatch(popupX, popupY, popupWidth, popupHeight, Color30);
-    DrawRectBorder(popupX, popupY, popupWidth, popupHeight, 1, Color13);
-    DrawRectBatch(popupX, popupY, popupWidth, (int)(fontSize * 0.8f) + padding/2, Color04);
-    DrawTextBatch(
-        popupX + padding, 
-        popupY + padding/4, 
-        font, 
-        fontSize * 0.7f, 
-        "Completions", 
-        Color15
-    );
-    int titleBarHeight = (int)(fontSize * 0.8f) + padding/2;
-    int visibleStart = 0;
-    if (lsp.completions.count > visibleItems) {
-        if (lsp.completions.selectedIndex >= visibleItems) 
-            visibleStart = lsp.completions.selectedIndex - visibleItems/2;
-        if (lsp.completions.selectedIndex < visibleStart)
-            visibleStart = lsp.completions.selectedIndex;
-        visibleStart = fmax(0, fmin(lsp.completions.count - visibleItems, visibleStart));
-    }
-    for (int i = 0; i < visibleItems && i + visibleStart < lsp.completions.count; i++) {
-        int itemIndex = i + visibleStart;
-        CompletionItem* item = &lsp.completions.items[itemIndex];
-        int itemY = popupY + titleBarHeight + i * itemHeight;
-        if (itemIndex == lsp.completions.selectedIndex) {
-            DrawRectBatch(popupX + 1, itemY, popupWidth - 2, itemHeight, Color00);
-            DrawRectBorder(popupX + 1, itemY, popupWidth - 2, itemHeight, 1, Color13);
-        }
-        Color iconColor;
-        char iconChar = ' ';
-        switch (item->kind) {
-            case 1:  iconChar = 'T'; iconColor = Color23; break;
-            case 2:  iconChar = 'M'; iconColor = Color03; break;
-            case 3:  iconChar = 'F'; iconColor = Color03; break;
-            case 4:  iconChar = 'C'; iconColor = Color02; break;
-            case 5:  iconChar = 'F'; iconColor = Color16; break;
-            case 6:  iconChar = 'V'; iconColor = Color16; break;
-            case 7:  iconChar = 'C'; iconColor = Color01; break;
-            case 8:  iconChar = 'I'; iconColor = Color01; break;
-            case 9:  iconChar = 'M'; iconColor = Color22; break;
-            case 10: iconChar = 'P'; iconColor = Color16; break;
-            case 11: iconChar = 'U'; iconColor = Color18; break;
-            case 12: iconChar = 'V'; iconColor = Color16; break;
-            case 13: iconChar = 'E'; iconColor = Color01; break;
-            case 14: iconChar = 'K'; iconColor = Color19; break;
-            case 15: iconChar = 'S'; iconColor = Color28; break;
-            case 16: iconChar = 'C'; iconColor = Color08; break;
-            case 17: iconChar = 'F'; iconColor = Color08; break;
-            case 18: iconChar = 'R'; iconColor = Color08; break;
-            case 19: iconChar = 'F'; iconColor = Color08; break;
-            case 20: iconChar = 'E'; iconColor = Color01; break;
-            case 21: iconChar = 'C'; iconColor = Color08; break;
-            case 22: iconChar = 'S'; iconColor = Color01; break;
-            case 23: iconChar = 'E'; iconColor = Color08; break;
-            case 24: iconChar = 'O'; iconColor = Color08; break;
-            case 25: iconChar = 'T'; iconColor = Color06; break;
-            default: iconChar = '?'; iconColor = Color07; break;
-        }
-        char iconStr[2] = {iconChar, '\0'};
-        int iconX = popupX + padding;
-        int iconY = itemY + (itemHeight - fontSize) / 2;
-        if (itemIndex == lsp.completions.selectedIndex) {
-            DrawRectBatch(
-                iconX - padding/2, 
-                iconY - padding/4, 
-                fontSize + padding, 
-                fontSize + padding/2, 
-                Color05
-            );
-        }
-        DrawTextBatch(iconX, iconY, font, fontSize, iconStr, iconColor);
-        Color labelColor = (itemIndex == lsp.completions.selectedIndex) ? Color15 : Color07;
-        DrawTextBatch(
-            iconX + iconWidth, 
-            iconY, 
-            font, 
-            completionFontSize, 
-            item->label, 
-            labelColor
-        );
-        if (item->detail[0] != '\0') {
-            TextSize labelSize = GetTextSizeCached(font, completionFontSize, item->label);
-            Color detailColor = (itemIndex == lsp.completions.selectedIndex) ? Color02 : Color08;
-            char detailStr[256];
-            strncpy(detailStr, item->detail, sizeof(detailStr) - 1);
-            detailStr[sizeof(detailStr) - 1] = '\0';
-            int maxDetailWidth = popupWidth - iconWidth - labelSize.width - padding * 4;
-            TextSize detailSize = GetTextSizeCached(font, detailFontSize, detailStr);
-            if (detailSize.width > maxDetailWidth) {
-                int len = strlen(detailStr);
-                while (len > 3 && detailSize.width > maxDetailWidth) {
-                    detailStr[len-3] = '.';
-                    detailStr[len-2] = '.';
-                    detailStr[len-1] = '.';
-                    detailStr[len] = '\0';
-                    len--;
-                    detailSize = GetTextSizeCached(font, detailFontSize, detailStr);
-                }
-            }
-            DrawTextBatch(
-                iconX + iconWidth + labelSize.width + padding, 
-                iconY + (fontSize - detailFontSize) / 2, 
-                font, 
-                detailFontSize, 
-                detailStr, 
-                detailColor
-            );
-        }
-    }
-    if (lsp.completions.count > visibleItems) {
-        int scrollbarWidth = 4;
-        int scrollbarHeight = (visibleItems * (popupHeight - titleBarHeight - hintHeight)) / lsp.completions.count;
-        scrollbarHeight = fmax(20, scrollbarHeight);
-        float scrollRatio = (float)visibleStart / (lsp.completions.count - visibleItems);
-        int scrollbarY = popupY + titleBarHeight + scrollRatio * (popupHeight - titleBarHeight - hintHeight - scrollbarHeight);
-        DrawRectBatch(
-            popupX + popupWidth - scrollbarWidth - 2, 
-            popupY + titleBarHeight, 
-            scrollbarWidth, 
-            popupHeight - titleBarHeight - hintHeight, 
-            Color29
-        );
-        DrawRectBatch(
-            popupX + popupWidth - scrollbarWidth - 2, 
-            scrollbarY, 
-            scrollbarWidth, 
-            scrollbarHeight, 
-            Color13
-        );
-    }
-    int hintY = popupY + popupHeight - hintHeight;
-    DrawRectBatch(popupX, hintY, popupWidth, hintHeight, Color30);
-    DrawRectBorder(popupX, hintY, popupWidth, 1, 1, Color05);
-    char hintText[] = "↑/↓: Navigate  Tab: Select  Esc: Cancel";
-    TextSize hintSize = GetTextSizeCached(font, fontSize * 0.75, hintText);
-    int hintX = popupX + (popupWidth - hintSize.width) / 2;
-    DrawTextBatch(hintX, hintY + (hintHeight - hintSize.height) / 2, font, fontSize * 0.75, hintText, Color02);
-    if (!lsp.completions.active) isFirstShow = true;
-}
-void LspDrawHoverInfo() {
-    if (!lsp.hoverInfo.active || !lsp.hoverInfo.contents[0]) return;
-    float baseHoverFontSize = fontSize * 0.9f;
-    int horizontalPadding = (int)(fontSize * 0.6f);
-    int verticalPadding = (int)(fontSize * 0.3f);
-    float lineSpacingFactor = 1.1f;
-    int cursorX, cursorY;
-    if (wordWrap) {
-        int wl, wc;
-        OriginalToWrapped(lsp.hoverInfo.line, lsp.hoverInfo.col, &wl, &wc);
-        cursorY = wl * lineHeight - scroll.currentY;
-    } else {
-        cursorY = lsp.hoverInfo.line * lineHeight - scroll.currentY;
-    }
-    int textX = showLineNumbers ? gutterWidth : 0;
-    cursorX = textX;
-    if (lsp.hoverInfo.line < numLines) {
-        for (int i = 0; i < lsp.hoverInfo.col && i < lines[lsp.hoverInfo.line].length; i++) {
-            char charStr[2] = {lines[lsp.hoverInfo.line].text[i], '\0'};
-            TextSize size = GetTextSizeCached(font, fontSize, charStr);
-            cursorX += size.width;
-        }
-    }
-    cursorX -= scroll.currentX;
-    typedef struct {
-        const char* pattern;
-        Color color;
-        bool isPrefix;
-    } SyntaxPattern;
-    SyntaxPattern syntaxPatterns[] = {
-        {"class", Color01, false}, {"struct", Color01, false}, {"enum", Color01, false},
-        {"typedef", Color01, false}, {"static", Color09, false}, {"const", Color09, false},
-        {"int", Color06, false}, {"char", Color06, false}, {"bool", Color06, false},
-        {"void", Color06, false}, {"size_t", Color06, false}, {"//", Color08, true},
-        {"/*", Color08, true}, {"#", Color08, true}, {"\"", Color28, false},
-        {"'", Color28, false}, {"@param", Color03, true}, {"@return", Color03, true},
-        {"Parameters:", Color22, true}, {"Returns:", Color22, true}, {"**", Color14, false},
-        {"`", Color10, false},
-    };
-    char* tempCopy = strdup(lsp.hoverInfo.contents);
-    if (!tempCopy) return;
-    char* tmpContext = NULL;
-    char* tmpLine = strtok_r(tempCopy, "\n", &tmpContext);
-    int maxRawLineWidth = 0;
-    while (tmpLine) {
-        TextSize lineSize = GetTextSizeCached(font, baseHoverFontSize, tmpLine);
-        maxRawLineWidth = fmax(maxRawLineWidth, lineSize.width);
-        tmpLine = strtok_r(NULL, "\n", &tmpContext);
-    }
-    free(tempCopy);
-    bool isDefinition = (strstr(lsp.hoverInfo.contents, "DEFINITION DETAILS") != NULL);
-    int tooltipWidth = maxRawLineWidth + (horizontalPadding * 2);
-    tooltipWidth += (int)(fontSize * 2.0f);
-    if (isDefinition) {
-        tooltipWidth = fmax(tooltipWidth, (int)(fontSize * 35.0f));
-    } else {
-        tooltipWidth = fmax(tooltipWidth, (int)(fontSize * 25.0f));
-    }
-    tooltipWidth = fmin(tooltipWidth, window.screen_width - 10);
-    int usableWidth = tooltipWidth - (horizontalPadding * 2);
-    char* lineCopy = strdup(lsp.hoverInfo.contents);
-    if (!lineCopy) return;
-    char* context = NULL;
-    char* line = strtok_r(lineCopy, "\n", &context);
-    char** wrappedLines = malloc(1000 * sizeof(char*));
-    if (!wrappedLines) {
-        free(lineCopy);
-        return;
-    }
-    int numWrappedLines = 0;
-    int totalHeight = 0;
-    while (line) {
-        bool isSpecialLine = (strstr(line, "```") == line || 
-                             strstr(line, "@param") == line || 
-                             strstr(line, "//") == line);
-        if (isSpecialLine || strlen(line) == 0) {
-            wrappedLines[numWrappedLines] = strdup(line);
-            TextSize lineSize = GetTextSizeCached(font, baseHoverFontSize, line);
-            totalHeight += (int)(lineSize.height * lineSpacingFactor);
-            numWrappedLines++;
-        } else {
-            int len = strlen(line);
-            int startPos = 0;
-            while (startPos < len) {
-                int charsInLine = 0;
-                int lineWidth = 0;
-                int lastSpace = -1;
-                for (int i = startPos; i <= len; i++) {
-                    if (i == len || line[i] == ' ') {
-                        int wordEnd = i;
-                        int wordStart = startPos + charsInLine;
-                        char wordBuf[1024] = {0};
-                        int wordLen = wordEnd - wordStart;
-                        if (wordLen > 0 && wordLen < 1024) {
-                            strncpy(wordBuf, line + wordStart, wordLen);
-                            wordBuf[wordLen] = '\0';
-                            TextSize wordSize = GetTextSizeCached(font, baseHoverFontSize, wordBuf);
-                            if (lineWidth + wordSize.width > usableWidth && lineWidth > 0) {
-                                break;
-                            }
-                            lineWidth += wordSize.width;
-                            charsInLine = i - startPos;
-                            if (i < len && line[i] == ' ') {
-                                lastSpace = i;
-                                charsInLine++;
-                            }
-                        }
-                    }
-                }
-                if (lastSpace == -1 && charsInLine == 0 && len - startPos > 0) {
-                    charsInLine = 1;
-                    while (startPos + charsInLine < len) {
-                        char testBuf[1024] = {0};
-                        strncpy(testBuf, line + startPos, charsInLine);
-                        testBuf[charsInLine] = '\0';
-                        TextSize testSize = GetTextSizeCached(font, baseHoverFontSize, testBuf);
-                        if (testSize.width > usableWidth) break;
-                        charsInLine++;
-                    }
-                    charsInLine = fmax(1, charsInLine - 1);
-                }
-                if (charsInLine > 0) {
-                    char* wrappedLine = malloc(charsInLine + 1);
-                    if (wrappedLine) {
-                        strncpy(wrappedLine, line + startPos, charsInLine);
-                        wrappedLine[charsInLine] = '\0';
-                        wrappedLines[numWrappedLines++] = wrappedLine;
-                        TextSize lineSize = GetTextSizeCached(font, baseHoverFontSize, wrappedLine);
-                        totalHeight += (int)(lineSize.height * lineSpacingFactor);
-                    }
-                }
-                startPos += charsInLine;
-                while (startPos < len && line[startPos] == ' ') startPos++;
-                if (startPos >= len) break;
-            }
-        }
-        line = strtok_r(NULL, "\n", &context);
-    }
-    free(lineCopy);
-    totalHeight += (int)(baseHoverFontSize);
-    int tooltipHeight = totalHeight + (verticalPadding * 2);
-    tooltipHeight = fmin(tooltipHeight, window.screen_height - 10);
-    int tooltipX = cursorX + (int)(fontSize * 0.5f);
-    int tooltipY = cursorY + lineHeight + 2;
-    if (tooltipX + tooltipWidth > window.screen_width - 5) {
-        tooltipX = window.screen_width - tooltipWidth - 5;
-    }
-    if (tooltipY + tooltipHeight > window.screen_height - 5) {
-        tooltipY = cursorY - tooltipHeight - 2;
-    }
-    DrawRectBatch(tooltipX, tooltipY, tooltipWidth, tooltipHeight, Color30);
-    DrawRectBorder(tooltipX, tooltipY, tooltipWidth, tooltipHeight, 1, Color05);
-    DrawRectBatch(tooltipX, tooltipY, tooltipWidth, 2, Color04);
-    FlushRectBatch();
-    int lineY = tooltipY + verticalPadding;
-    bool inCodeBlock = false;
-    int visibleLines = numWrappedLines;
-    for (int i = 0; i < visibleLines; i++) {
-        if (!wrappedLines[i] || !wrappedLines[i][0]) {
-            lineY += (int)(baseHoverFontSize * 0.6f);
-            continue;
-        }
-        if (strncmp(wrappedLines[i], "```", 3) == 0) {
-            inCodeBlock = !inCodeBlock;
-            DrawTextBatch(tooltipX + horizontalPadding, lineY, font, baseHoverFontSize, wrappedLines[i], Color10);
-            lineY += (int)(baseHoverFontSize * lineSpacingFactor);
-            continue;
-        }
-        Color textColor = inCodeBlock ? Color10 : Color07;
-        if (!inCodeBlock) {
-            for (size_t p = 0; p < sizeof(syntaxPatterns)/sizeof(syntaxPatterns[0]); p++) {
-                const char* pattern = syntaxPatterns[p].pattern;
-                bool isPrefix = syntaxPatterns[p].isPrefix;
-                bool matched = (isPrefix && strncmp(wrappedLines[i], pattern, strlen(pattern)) == 0) || 
-                              (!isPrefix && strstr(wrappedLines[i], pattern));
-                if (matched) {
-                    textColor = syntaxPatterns[p].color;
-                    break;
-                }
-            }
-        }
-        DrawTextBatch(tooltipX + horizontalPadding, lineY, font, baseHoverFontSize, wrappedLines[i], textColor);
-        lineY += (int)(baseHoverFontSize * lineSpacingFactor);
-    }
-    char* closeHint = "Esc to close";
-    float hintFontSize = baseHoverFontSize * 0.65f;
-    TextSize hintSize = GetTextSizeCached(font, hintFontSize, closeHint);
-    int hintX = tooltipX + tooltipWidth - hintSize.width - horizontalPadding;
-    int hintY = tooltipY + tooltipHeight - (int)(baseHoverFontSize * 0.9f);
-    DrawTextBatch(hintX, hintY, font, hintFontSize, closeHint, Color02);
-    for (int i = 0; i < numWrappedLines; i++) {
-        free(wrappedLines[i]);
-    }
-    free(wrappedLines);
-    FlushTextBatch();
-}
+
+#include "modules/editor/lsp/draw.c"
+
 bool LspApplySelectedCompletion() {
     if (!lsp.completions.active || 
         lsp.completions.selectedIndex < 0 || 
@@ -1732,6 +1020,7 @@ void CheckAutoCompletion() {
         }
     }
 }
+
 void HandleAsyncLspResponses() {
     static double requestStartTime = 0;
     static bool wasRequestInProgress = false;
@@ -1764,6 +1053,7 @@ void HandleAsyncLspResponses() {
         }
     }
 }
+
 void LspProcessDefinitionResponse(const char* json) {
     if (!json) {
         lsp.isDefinitionAvailable = false;
@@ -1871,6 +1161,7 @@ void LspProcessDefinitionResponse(const char* json) {
         snprintf(statusMsg, sizeof(statusMsg), "Definition found in %s", baseName);
     }
 }
+
 void LspUpdate() {
     if (!lsp.active) return;
     char* message;
@@ -1928,11 +1219,13 @@ void LspUpdate() {
         lastHoverRequest = window.time;
     }
 }
+
 void ToggleAutoCompletion() {
     autoCompletionEnabled = !autoCompletionEnabled;
     snprintf(statusMsg, sizeof(statusMsg), "Auto-completion %s", 
              autoCompletionEnabled ? "enabled" : "disabled");
 }
+
 void UpdateLsp() {
     static bool lastDirty = false;
     if (lsp.active && isFileDirty && !lastDirty) {
@@ -1954,6 +1247,7 @@ void UpdateLsp() {
         LspDrawCompletions();
     }
 }
+
 void LspInit() {
     const struct {
         const char* extension;
@@ -1996,6 +1290,7 @@ void LspInit() {
         }
     }
 }
+
 void LspRestart() {
     if (!lsp.active) return;
     char langId[32];
@@ -2026,9 +1321,11 @@ void LspRestart() {
         }
     }
 }
+
 void LspCleanup() {
     if (lsp.active) LspStop();
 }
+
 void GoToDefinition() {
     if (isDefinitionJumped) {
         if (prevLine != -1 && strlen(prevFilename) > 0) {
@@ -2181,6 +1478,7 @@ void GoToDefinition() {
     }
     isRequestInProgress = false;
 }
+
 void ToggleLsp() {
     if (lsp.active) {
         LspStop();
@@ -2199,90 +1497,5 @@ void ToggleLsp() {
         }
     }
 }
-void EditorLspKeyHandler(int key, int action, int mods) {
-    if (action != GLFW_PRESS) return;
-    bool ctrl = (mods & GLFW_MOD_CONTROL) != 0;
-    bool shift = (mods & GLFW_MOD_SHIFT) != 0;
-    if (key == GLFW_KEY_ESCAPE) {
-        if (lsp.completions.active || lsp.hoverInfo.active) {
-            lsp.completions.active = false;
-            lsp.completions.count = 0;
-            lsp.completions.selectedIndex = 0;
-            lsp.hoverInfo.active = false;
-            preventUiReopen = true;
-            preventionStartTime = window.time;
-            return;
-        }
-    }
-    if (key == GLFW_KEY_SPACE && ctrl && !shift) {
-        preventUiReopen = false;
-        LspRequestCompletion(cursorLine, cursorCol);
-        return;
-    }
-    if (key == GLFW_KEY_I && ctrl) {
-        preventUiReopen = false;
-        LspRequestHover(cursorLine, cursorCol);
-        return;
-    }
-    if (lsp.completions.active) {
-        switch (key) {
-            case GLFW_KEY_DOWN:
-                lsp.completions.selectedIndex = 
-                    (lsp.completions.selectedIndex + 1) % lsp.completions.count;
-                return;
-            case GLFW_KEY_UP:
-                lsp.completions.selectedIndex = 
-                    (lsp.completions.selectedIndex - 1 + lsp.completions.count) % 
-                    lsp.completions.count;
-                return;
-            case GLFW_KEY_TAB:
-            case GLFW_KEY_ENTER:
-                if (LspApplySelectedCompletion()) {
-                    if (wordWrap) RecalculateWrappedLines();
-                    return;
-                }
-                break;
-        }
-    }
-    if (ctrl && shift) {
-        switch (key) {
-            case GLFW_KEY_SPACE:
-                ToggleAutoCompletion();
-                return;
-        }
-    }
-    switch (key) {
-        case GLFW_KEY_F9:
-            ToggleLsp();
-            return;
-        case GLFW_KEY_F10:
-            preventUiReopen = false;
-            lsp.hoverInfo.active = false;
-            snprintf(statusMsg, sizeof(statusMsg), "Go To Definition");
-            GoToDefinition();
-            return;
-        case GLFW_KEY_F11:
-            preventUiReopen = !preventUiReopen;
-            if (preventUiReopen) {
-                preventionStartTime = window.time;
-                lsp.completions.active = false;
-                lsp.hoverInfo.active = false;
-                snprintf(statusMsg, sizeof(statusMsg), "LSP popups disabled");
-            } else {
-                snprintf(statusMsg, sizeof(statusMsg), "LSP popups enabled");
-            }
-            return;
-        case GLFW_KEY_F12:
-            if (lsp.active) LspRestart();
-            return;
-    }
-}
-void EditorLspCharHandler(unsigned int c) {
-    if (preventUiReopen) {
-        return;
-    }
-    lastTypingTime = window.time;
-    if (c == '.' || c == '>' || c == ':' || c == '(' || c == '[') {
-        LspRequestCompletion(cursorLine, cursorCol);
-    }
-}
+
+#include "modules/editor/lsp/key.c"

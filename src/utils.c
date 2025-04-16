@@ -185,7 +185,7 @@ void SetClipboardText(const char *text) {
     pclose(xclip);
 }
 
-char *GetClipboardText(void) {
+char *GetClipboardText(void) { 
     char *cmd = "xclip -selection clipboard -o";
     FILE *xclip = popen(cmd, "r");
     if (xclip == NULL) {

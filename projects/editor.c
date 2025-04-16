@@ -4,12 +4,12 @@
 Font font;
 Shader shaderfontcursor;
 
-#include "modules/editor.c"
+#include "modules/editor/init.c"
 
 int main(int argc, char *argv[]) {
     window.opt.floating = true;
     //window.opt.transparent = true;glClearColor(0.0f, 0.0f, 0.0f, 0.75f);
-    WindowInit(1920, 1080, "Grafenic - Text Editor");
+    WindowInit(1920, 1050, "Grafenic - Text Editor");
     font = LoadFont("./res/fonts/Monocraft.ttf");
     //font = LoadFont("./res/fonts/JetBrains.ttf");font.nearest = false;
     //shaderfont.hotreloading = true;//shaderdefault.hotreloading = true;
@@ -35,9 +35,9 @@ int main(int argc, char *argv[]) {
 //  timeline of files old 7 days
 //  sudo save using like pkexec
 //  code folding
-//  use paywall colors and refine colors in modline and minimap
+//  use paywall colors if present and refine colors in modline and minimap
 //  code snippets
-//  unicode support
+//  unicode support "to add in the actual library"
 //  refine zooming animation to be more smooth and also scrolling
 //  term escape sequences support
 //  jupyter notebooks like cells with whatever interpreter you want
@@ -51,3 +51,7 @@ int main(int argc, char *argv[]) {
 //  git info
 //  copilot like ai
 //  snyk anlysis just the cli
+
+// NOTE this is a work in progess 
+// prototyped by vibecoding ;( unlike the library
+// Need a completed rewrite and refactoring in some modules to not have badly managed memory.
