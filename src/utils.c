@@ -2,14 +2,16 @@
 // Debug
 
 void ErrorCallback(int error, const char* description) {
-    fprintf(stderr, "Error: %s\n", description);
+    fprintf(stderr, "Error %d: %s\n", error, description ? description : "Unknown");
 }
 
 void ClearOutput() {
-    printf("\033[H\033[J");
+    fputs("\033[H\033[J", stdout);
+    fflush(stdout);
 }
 
 void print(const char* format, ...) {
+    if (!format) return;
     va_list args;
     va_start(args, format);
     vprintf(format, args);
@@ -19,7 +21,8 @@ void print(const char* format, ...) {
 // Text
 
 const char* text(const char* format, ...) {
-    static char buffer[100];
+    static char buffer[1024];
+    if (!format) return "";
     va_list args;
     va_start(args, format);
     vsnprintf(buffer, sizeof(buffer), format, args);
@@ -27,244 +30,245 @@ const char* text(const char* format, ...) {
     return buffer;
 }
 
-int textint(char *str) {
-    return atoi(str);
+int textint(char* str) {
+    return str ? (int)strtol(str, NULL, 10) : 0;
 }
 
-float textfloat(char *str) {
-    return atof(str);
+float textfloat(char* str) {
+    return str ? strtof(str, NULL) : 0.0f;
 }
 
-unsigned int textlength(const char *text) {
-    return strlen(text);
+unsigned int textlength(const char* value) {
+    return value ? (unsigned int)strlen(value) : 0;
 }
 
-const char *textsubtext(const char *text, int position, int length) {
+const char* textsubtext(const char* value, int position, int length) {
     static char buffer[1024];
-    strncpy(buffer, text + position, length);
-    buffer[length] = '\0';
+    if (!value || length <= 0) {
+        buffer[0] = '\0';
+        return buffer;
+    }
+    size_t size = strlen(value);
+    if (position < 0) position = 0;
+    if ((size_t)position > size) position = (int)size;
+    size_t count = MinInt(length, (int)(size - position));
+    if (count >= sizeof(buffer)) count = sizeof(buffer) - 1;
+    memcpy(buffer, value + position, count);
+    buffer[count] = '\0';
     return buffer;
 }
 
-char *textreplace(const char *text, const char *replace, const char *by) {
-    int len = strlen(text);
-    int len_replace = strlen(replace);
-    int len_by = strlen(by);
-    int new_len = len - len_replace + len_by;
-    char *new_text = malloc(new_len + 1);
-    if (!new_text) return NULL;
-    const char *current = text;
-    char *new_current = new_text;
-    while (*current) {
-        if (strstr(current, replace) == current) {
-            strcpy(new_current, by);
-            current += len_replace;
-            new_current += len_by;
-        } else {
-            *new_current++ = *current++;
-        }
+char* textreplace(const char* value, const char* replace, const char* by) {
+    if (!value || !replace || !by) return NULL;
+    size_t valueLength = strlen(value);
+    size_t replaceLength = strlen(replace);
+    size_t byLength = strlen(by);
+    if (replaceLength == 0) return strdup(value);
+    size_t occurrences = 0;
+    const char* scan = value;
+    while ((scan = strstr(scan, replace))) {
+        occurrences++;
+        scan += replaceLength;
     }
-    *new_current = '\0';
-    return new_text;
+    size_t resultLength = valueLength + occurrences * byLength - occurrences * replaceLength;
+    char* result = malloc(resultLength + 1);
+    if (!result) return NULL;
+    const char* source = value;
+    char* destination = result;
+    while ((scan = strstr(source, replace))) {
+        size_t prefix = (size_t)(scan - source);
+        memcpy(destination, source, prefix);
+        destination += prefix;
+        memcpy(destination, by, byLength);
+        destination += byLength;
+        source = scan + replaceLength;
+    }
+    strcpy(destination, source);
+    return result;
 }
 
-char *textinsert(const char *text, const char *insert, int position) {
-    int len = strlen(text);
-    int len_insert = strlen(insert);
-    char *new_text = malloc(len + len_insert + 1);
-    if (!new_text) return NULL;
-    strncpy(new_text, text, position);
-    strcpy(new_text + position, insert);
-    strcpy(new_text + position + len_insert, text + position);
-    return new_text;
+char* textinsert(const char* value, const char* insert, int position) {
+    if (!value || !insert) return NULL;
+    size_t length = strlen(value);
+    size_t insertLength = strlen(insert);
+    if (position < 0) position = 0;
+    if ((size_t)position > length) position = (int)length;
+    char* result = malloc(length + insertLength + 1);
+    if (!result) return NULL;
+    memcpy(result, value, position);
+    memcpy(result + position, insert, insertLength);
+    memcpy(result + position + insertLength, value + position, length - position + 1);
+    return result;
 }
 
-const char *textjoin(const char **textList, const char *delimiter, int count) {
-    static char buffer[1024];
+const char* textjoin(const char** textList, const char* delimiter, int count) {
+    static char buffer[4096];
     buffer[0] = '\0';
-    for (int i = 0; i < count; ++i) {
-        strcat(buffer, textList[i]);
-        if (i < (count - 1)) {
-            strcat(buffer, delimiter);
+    if (!textList || !delimiter || count <= 0) return buffer;
+    size_t used = 0;
+    for (int i = 0; i < count && used < sizeof(buffer) - 1; i++) {
+        const char* part = textList[i] ? textList[i] : "";
+        size_t partLength = strlen(part);
+        size_t available = sizeof(buffer) - 1 - used;
+        size_t copyLength = partLength < available ? partLength : available;
+        memcpy(buffer + used, part, copyLength);
+        used += copyLength;
+        if (i < count - 1 && used < sizeof(buffer) - 1) {
+            size_t delimiterLength = strlen(delimiter);
+            available = sizeof(buffer) - 1 - used;
+            copyLength = delimiterLength < available ? delimiterLength : available;
+            memcpy(buffer + used, delimiter, copyLength);
+            used += copyLength;
         }
     }
+    buffer[used] = '\0';
     return buffer;
 }
 
-const char **textsplit(const char *text, char delimiter, int *count) {
-    *count = 1;
-    for (const char *p = text; *p; p++) {
-        if (*p == delimiter) (*count)++;
-    }
-    const char **splits = malloc(*count * sizeof(char *));
-    const char *start = text;
-    int idx = 0;
-    for (const char *p = text; *p; p++) {
-        if (*p == delimiter) {
-            int len = p - start;
-            splits[idx] = malloc(len + 1);
-            strncpy((char *)splits[idx], start, len);
-            ((char *)splits[idx])[len] = '\0';
-            idx++;
-            start = p + 1;
+const char** textsplit(const char* value, char delimiter, int* count) {
+    if (!count) return NULL;
+    *count = 0;
+    if (!value) return NULL;
+    int parts = 1;
+    for (const char* p = value; *p; p++) if (*p == delimiter) parts++;
+    const char** splits = calloc((size_t)parts, sizeof(char*));
+    if (!splits) return NULL;
+    const char* start = value;
+    int index = 0;
+    for (const char* p = value;; p++) {
+        if (*p != delimiter && *p != '\0') continue;
+        size_t length = (size_t)(p - start);
+        char* part = malloc(length + 1);
+        if (!part) {
+            for (int i = 0; i < index; i++) free((void*)splits[i]);
+            free(splits);
+            return NULL;
         }
+        memcpy(part, start, length);
+        part[length] = '\0';
+        splits[index++] = part;
+        if (*p == '\0') break;
+        start = p + 1;
     }
-    int len = text + strlen(text) - start;
-    splits[idx] = malloc(len + 1);
-    strncpy((char *)splits[idx], start, len);
-    ((char *)splits[idx])[len] = '\0';
+    *count = index;
     return splits;
 }
 
-void textappend(char *text, const char *append, int *position) {
-    strcat(text, append);
-    *position += strlen(append);
+void textappend(char* value, const char* append, int* position) {
+    if (!value || !append || !position) return;
+    size_t length = strlen(append);
+    memcpy(value + *position, append, length + 1);
+    *position += (int)length;
 }
 
-int textfindindex(const char *text, const char *find) {
-    const char *found = strstr(text, find);
-    return found ? found - text : -1;
+int textfindindex(const char* value, const char* find) {
+    if (!value || !find) return -1;
+    const char* found = strstr(value, find);
+    return found ? (int)(found - value) : -1;
 }
 
-const char *textupper(const char *text) {
+const char* textupper(const char* value) {
     static char buffer[1024];
-    int i = 0;
-    for (; text[i]; i++) {
-        buffer[i] = toupper(text[i]);
-    }
+    if (!value) return "";
+    size_t i = 0;
+    for (; value[i] && i < sizeof(buffer) - 1; i++) buffer[i] = (char)toupper((unsigned char)value[i]);
     buffer[i] = '\0';
     return buffer;
 }
 
-const char *textlower(const char *text) {
+const char* textlower(const char* value) {
     static char buffer[1024];
-    int i = 0;
-    for (; text[i]; i++) {
-        buffer[i] = tolower(text[i]);
-    }
+    if (!value) return "";
+    size_t i = 0;
+    for (; value[i] && i < sizeof(buffer) - 1; i++) buffer[i] = (char)tolower((unsigned char)value[i]);
     buffer[i] = '\0';
     return buffer;
 }
 
 // Utils
 
-void RandomSeed(unsigned int seed)
-{
+void RandomSeed(unsigned int seed) {
     srand(seed);
 }
 
-int RandomValue(int min, int max)
-{
+int RandomValue(int min, int max) {
     if (min > max) {
-        int tmp = max;
-        max = min;
-        min = tmp;
+        int temp = min;
+        min = max;
+        max = temp;
     }
-    return (rand()%(abs(max-min)+1) + min);
+    uint64_t range = (uint64_t)((int64_t)max - (int64_t)min) + 1;
+    uint64_t value = ((uint64_t)(unsigned int)rand() << 32) ^ (unsigned int)rand();
+    return (int)((int64_t)min + (int64_t)(value % range));
 }
 
-void OpenURL(const char *url) {
-    if (url == NULL) {
-        return;
+void OpenURL(const char* url) {
+    if (!url || !url[0]) return;
+    if (fork() == 0) {
+        execlp("xdg-open", "xdg-open", url, (char*)NULL);
+        _exit(127);
     }
-    char cmd[1024];
-    snprintf(cmd, sizeof(cmd), "xdg-open '%s'", url);
-    system(cmd);
 }
 
-void SetClipboardText(const char *text) {
-    if (text == NULL) {
-        return;
-    }
-    char *cmd = "xclip -selection clipboard";
-    FILE *xclip = popen(cmd, "w");
-    if (xclip == NULL) {
-        return;
-    }
-    fputs(text, xclip);
-    pclose(xclip);
+void SetClipboardText(const char* value) {
+    if (window.w && value) glfwSetClipboardString(window.w, value);
 }
 
-char *GetClipboardText(void) { 
-    char *cmd = "xclip -selection clipboard -o";
-    FILE *xclip = popen(cmd, "r");
-    if (xclip == NULL) {
-        return NULL;
-    }
-    char *text = NULL;
-    size_t size = 0;
-    ssize_t nread;
-    if (getline(&text, &size, xclip) == -1) {
-        pclose(xclip);
-        free(text);
-        return NULL;
-    }
-    pclose(xclip);
-    return text;
+char* GetClipboardText(void) {
+    if (!window.w) return NULL;
+    const char* value = glfwGetClipboardString(window.w);
+    return value ? strdup(value) : NULL;
 }
 
 int MaxInt(int a, int b) {
-    return (a > b) ? a : b;
+    return a > b ? a : b;
 }
 
 int MinInt(int a, int b) {
-    return (a < b) ? a : b;
+    return a < b ? a : b;
 }
 
 int Clamp(int value, int min, int max) {
-    if (value < min) {
-        return min;
-    } else if (value > max) {
-        return max;
-    } else {
-        return value;
-    }
+    if (value < min) return min;
+    if (value > max) return max;
+    return value;
 }
 
 int Scaling(int fontsize) {
-    float widthScale = (float)window.screen_width / window.width;
-    float heightScale = (float)window.screen_height / window.height;
-    float scale = fmin(widthScale, heightScale);
-    int scaledFontSize = (int)(fontsize * scale);
-    return (fontsize > 0) ? fmax(scaledFontSize, 1) : 0;
+    if (fontsize <= 0 || window.width <= 0 || window.height <= 0) return 0;
+    float widthScale = (float)window.screen_width / (float)window.width;
+    float heightScale = (float)window.screen_height / (float)window.height;
+    int scaledFontSize = (int)(fontsize * fminf(widthScale, heightScale));
+    return MaxInt(scaledFontSize, 1);
 }
 
 // Smothing
 
-float Easing(float t, const char *text) {
-    if (strcmp(text, "Linear") == 0) {
-        return t;
-    } else if (strcmp(text, "SineIn") == 0) {
-        return 1.0f - cosf((t * PI) / 2.0f);
-    } else if (strcmp(text, "SineOut") == 0) {
-        return sinf((t * PI) / 2.0f);
-    } else if (strcmp(text, "SineInOut") == 0) {
-        return -(cosf(PI * t) - 1.0f) / 2.0f;
-    } else if (strcmp(text, "CubicIn") == 0) {
-        return t * t * t;
-    } else if (strcmp(text, "CubicOut") == 0) {
+float Easing(float t, const char* name) {
+    if (!name || strcmp(name, "Linear") == 0) return t;
+    if (strcmp(name, "SineIn") == 0) return 1.0f - cosf(t * PI * 0.5f);
+    if (strcmp(name, "SineOut") == 0) return sinf(t * PI * 0.5f);
+    if (strcmp(name, "SineInOut") == 0) return -(cosf(PI * t) - 1.0f) * 0.5f;
+    if (strcmp(name, "CubicIn") == 0) return t * t * t;
+    if (strcmp(name, "CubicOut") == 0) {
         float p = t - 1.0f;
         return p * p * p + 1.0f;
-    } else if (strcmp(text, "CubicInOut") == 0) {
-        if (t < 0.5f)
-            return 4.0f * t * t * t;
-        else {
-            float f = ((2.0f * t) - 2.0f);
-            return 0.5f * f * f * f + 1.0f;
-        }
-    } else {
-        return t;
     }
+    if (strcmp(name, "CubicInOut") == 0) {
+        if (t < 0.5f) return 4.0f * t * t * t;
+        float f = 2.0f * t - 2.0f;
+        return 0.5f * f * f * f + 1.0f;
+    }
+    return t;
 }
 
 float Motion(float speed, float intensity) {
-    float sineValue = sin(glfwGetTime() * speed);
-    return (sineValue + 1.0f) * 0.5f * intensity;
+    return (sinf((float)glfwGetTime() * speed) + 1.0f) * 0.5f * intensity;
 }
 
 float Lerp(float start, float end, float t) {
     if (t < 0.0f) t = 0.0f;
-    if (t > 1.0f) t = 1.0f;
+    else if (t > 1.0f) t = 1.0f;
     return start + (end - start) * t;
 }
 
@@ -279,119 +283,94 @@ void SetTime(double time) {
 }
 
 bool Wait(double delaySeconds) {
-    static double startTime = 0;
-    static bool isWaiting = false;
-    if (!isWaiting) {
-        startTime = glfwGetTime();
-        isWaiting = true;
+    static double startTime = 0.0;
+    static bool waiting = false;
+    double now = glfwGetTime();
+    if (!waiting) {
+        startTime = now;
+        waiting = true;
         return false;
     }
-    if (glfwGetTime() - startTime > delaySeconds) {
-        isWaiting = false;
-        return true;
-    }
-    return false;
+    if (now - startTime < delaySeconds) return false;
+    waiting = false;
+    return true;
 }
 
 // Collision
 
 bool IsInside(float x, float y, float rectX, float rectY, float rectWidth, float rectHeight) {
-    return x >= rectX && x <= rectX + rectWidth &&
-        y >= rectY && y <= rectY + rectHeight;
+    return x >= rectX && x <= rectX + rectWidth && y >= rectY && y <= rectY + rectHeight;
 }
 
 // File checks
 
 bool DirExists(const char* path) {
-    struct stat statbuf;
-    if (stat(path, &statbuf) != 0) {
-        return false;
-    }
-    return S_ISDIR(statbuf.st_mode);
+    struct stat info;
+    return path && stat(path, &info) == 0 && S_ISDIR(info.st_mode);
 }
 
 bool FileExists(const char* filename) {
-    FILE* file = fopen(filename, "r");
-    if (file) {
-        fclose(file);
-        return true;
-    }
-    return false;
+    struct stat info;
+    return filename && stat(filename, &info) == 0 && S_ISREG(info.st_mode);
 }
 
 time_t GetFileModTime(const char* filePath) {
-    struct stat attrib;
-    if (stat(filePath, &attrib) != 0) {
-        perror("Error getting file modification time");
-        return -1;
-    }
-    return attrib.st_mtime;
+    struct stat info;
+    return filePath && stat(filePath, &info) == 0 ? info.st_mtime : (time_t)-1;
 }
 
 int AddWatch(int inotifyFd, const char* filePath) {
-    int wd = inotify_add_watch(inotifyFd, filePath, IN_MODIFY);
-    if (wd == -1) {
-        fprintf(stderr, "Error adding inotify watch for %s\n", filePath);
-    }
-    return wd;
+    if (!filePath) return -1;
+    int watch = inotify_add_watch(inotifyFd, filePath, IN_MODIFY | IN_CLOSE_WRITE | IN_MOVED_TO);
+    if (watch == -1) fprintf(stderr, "Error adding inotify watch for %s\n", filePath);
+    return watch;
 }
 
 // File Saving
 
 char* FileLoad(const char* path) {
-    FILE* file = fopen(path, "r");
-    if (file == NULL) {
-        file = fopen(path, "w");
-        if (file == NULL) {
-            perror("Error opening file for reading/writing");
-            return NULL;
-        }
+    if (!path) return NULL;
+    FILE* file = fopen(path, "rb");
+    if (!file) {
+        file = fopen(path, "wb");
+        if (!file) return NULL;
         fclose(file);
         return strdup("");
     }
-    fseek(file, 0, SEEK_END);
-    long file_size = ftell(file);
-    fseek(file, 0, SEEK_SET);
-    if (file_size <= 0) {
-        fclose(file);
-        return strdup("");
-    }
-    char* text = (char*)malloc(file_size + 1);
-    if (text == NULL) {
-        perror("Error allocating memory for file content");
+    if (fseek(file, 0, SEEK_END) != 0) {
         fclose(file);
         return NULL;
     }
-    if (fread(text, 1, file_size, file) != (size_t)file_size) {
-        perror("Error reading file content");
-        free(text);
+    long fileSize = ftell(file);
+    if (fileSize < 0 || fseek(file, 0, SEEK_SET) != 0) {
         fclose(file);
         return NULL;
     }
-    text[file_size] = '\0';
+    char* content = malloc((size_t)fileSize + 1);
+    if (!content) {
+        fclose(file);
+        return NULL;
+    }
+    size_t readSize = fread(content, 1, (size_t)fileSize, file);
     fclose(file);
-    return text;
+    if (readSize != (size_t)fileSize) {
+        free(content);
+        return NULL;
+    }
+    content[fileSize] = '\0';
+    return content;
 }
 
-char* FileSave(const char* path, const char* text) {
-    FILE* file = fopen(path, "w");
-    if (file == NULL) {
-        perror("Error opening file for writing");
-        return NULL;
-    }
-    if (fprintf(file, "%s\n", text) < 0) {
-        perror("Error writing to file");
-        fclose(file);
-        return NULL;
-    }
+char* FileSave(const char* path, const char* value) {
+    if (!path || !value) return NULL;
+    FILE* file = fopen(path, "wb");
+    if (!file) return NULL;
+    size_t length = strlen(value);
+    bool success = fwrite(value, 1, length, file) == length;
     fclose(file);
-    return strdup(text);
+    return success ? strdup(value) : NULL;
 }
 
 void FileClear(const char* path) {
-    if (remove(path) != 0) {
-        perror("Error deleting file");
-    } else {
-        printf("File successfully deleted\n");
-    }
+    if (path && remove(path) != 0) perror("Error deleting file");
 }

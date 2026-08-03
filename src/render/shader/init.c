@@ -36,12 +36,24 @@ void InitializeShader() {
     glBindVertexArray(0);
     glBindBuffer(GL_ARRAY_BUFFER, 0);
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
+    ResetRenderState();
+    SetBlend(true);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 }
 
-void TerminateShader(void){
+void TerminateShader(void) {
+    CleanUpCircleCache();
+    CleanUpTextureCache();
+    CleanUpFontCache();
+    UnbindTexture();
+    UseShader(0);
+    glBindVertexArray(0);
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
     glDeleteVertexArrays(1, &VAO);
     glDeleteBuffers(1, &VBO);
     glDeleteBuffers(1, &EBO);
-    glDeleteProgram(shaderdefault.Program);
-    glDeleteProgram(shaderfont.Program);
+    DeleteShader(shaderdefault);
+    DeleteShader(shaderfont);
+    ResetRenderState();
 }

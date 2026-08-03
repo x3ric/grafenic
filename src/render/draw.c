@@ -2,12 +2,43 @@
 #include "color.c"
 #include "cache.c"
 
-void DrawRect(int x, int y, int width, int height, Color color) {
+static inline Color DrawColor(Color color) {
     if (color.a == 0) color.a = 255;
-    GLuint textureID = GetCachedTexture(color, true, false, NULL, 0, 0);
-    glEnable(GL_BLEND);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-    glBindTexture(GL_TEXTURE_2D, textureID);
+    return color;
+}
+
+static inline bool SameColor(Color a, Color b) {
+    return a.r == b.r && a.g == b.g && a.b == b.b && a.a == b.a;
+}
+
+static void SetQuadVertices(GLfloat* vertices, float x, float y, float width, float height) {
+    vertices[0] = x;
+    vertices[1] = y + height;
+    vertices[2] = 0.0f;
+    vertices[3] = 0.0f;
+    vertices[4] = 1.0f;
+    vertices[5] = x + width;
+    vertices[6] = y + height;
+    vertices[7] = 0.0f;
+    vertices[8] = 1.0f;
+    vertices[9] = 1.0f;
+    vertices[10] = x;
+    vertices[11] = y;
+    vertices[12] = 0.0f;
+    vertices[13] = 0.0f;
+    vertices[14] = 0.0f;
+    vertices[15] = x + width;
+    vertices[16] = y;
+    vertices[17] = 0.0f;
+    vertices[18] = 1.0f;
+    vertices[19] = 0.0f;
+}
+
+void DrawRect(int x, int y, int width, int height, Color color) {
+    if (width == 0 || height == 0) return;
+    color = DrawColor(color);
+    BindTexture(GetCachedTexture(color, true, false, NULL, 0, 0));
+    SetBlend(true);
     Rect((RectObject){
         {x, y + height, 0.0f},         // Bottom Left
         {x + width, y + height, 0.0f}, // Bottom Right
@@ -16,228 +47,236 @@ void DrawRect(int x, int y, int width, int height, Color color) {
         shaderdefault,                 // Shader
         camera,                        // Camera
     });
-    UnbindTexture();
 }
 
-typedef struct {
-    GLfloat vertices[20];  // 5 attributes (x,y,z,u,v) for 4 vertices
-    Color color;
-} BatchRect;
-
 #define MAX_BATCH_RECTS 4096
-static BatchRect rectBatch[MAX_BATCH_RECTS];
+static GLfloat rectBatchVertices[MAX_BATCH_RECTS * 20];
+static Color rectBatchColors[MAX_BATCH_RECTS];
 static GLuint rectIndices[MAX_BATCH_RECTS * 6];
 static int rectBatchCount = 0;
 static bool rectIndicesInitialized = false;
 
+static void InitializeRectIndices(void) {
+    if (rectIndicesInitialized) return;
+    for (int i = 0; i < MAX_BATCH_RECTS; i++) {
+        int index = i * 6;
+        int vertex = i * 4;
+        rectIndices[index + 0] = vertex + 0; // Bottom Left
+        rectIndices[index + 1] = vertex + 1; // Bottom Right
+        rectIndices[index + 2] = vertex + 2; // Top Left
+        rectIndices[index + 3] = vertex + 1; // Bottom Right
+        rectIndices[index + 4] = vertex + 3; // Top Right
+        rectIndices[index + 5] = vertex + 2; // Top Left
+    }
+    rectIndicesInitialized = true;
+}
+
 void DrawRectBatch(int x, int y, int width, int height, Color color) {
-    if (color.a == 0) color.a = 255;
-    if (rectBatchCount >= MAX_BATCH_RECTS - 1) {
-        FlushTextBatch();
-    }
-    if (!rectIndicesInitialized) {
-        for (int i = 0; i < MAX_BATCH_RECTS; i++) {
-            int idx = i * 6;
-            int vstart = i * 4;
-            rectIndices[idx + 0] = vstart + 0; // Bottom Left
-            rectIndices[idx + 1] = vstart + 1; // Bottom Right
-            rectIndices[idx + 2] = vstart + 2; // Top Left
-            rectIndices[idx + 3] = vstart + 1; // Bottom Right
-            rectIndices[idx + 4] = vstart + 3; // Top Right
-            rectIndices[idx + 5] = vstart + 2; // Top Left
-        }
-        rectIndicesInitialized = true;
-    }
-    BatchRect* rect = &rectBatch[rectBatchCount];
-    rect->color = color;
-    float u0 = 0.0f, v0 = 0.0f;
-    float u1 = 1.0f, v1 = 1.0f;
-    // Bottom Left
-    rect->vertices[0] = (float)x;
-    rect->vertices[1] = (float)(y + height);
-    rect->vertices[2] = 0.0f;
-    rect->vertices[3] = u0;
-    rect->vertices[4] = v1;
-    // Bottom Right
-    rect->vertices[5] = (float)(x + width);
-    rect->vertices[6] = (float)(y + height);
-    rect->vertices[7] = 0.0f;
-    rect->vertices[8] = u1;
-    rect->vertices[9] = v1;
-    // Top Left
-    rect->vertices[10] = (float)x;
-    rect->vertices[11] = (float)y;
-    rect->vertices[12] = 0.0f;
-    rect->vertices[13] = u0;
-    rect->vertices[14] = v0;
-    // Top Right
-    rect->vertices[15] = (float)(x + width);
-    rect->vertices[16] = (float)y;
-    rect->vertices[17] = 0.0f;
-    rect->vertices[18] = u1;
-    rect->vertices[19] = v0;
-    rectBatchCount++;
+    if (width == 0 || height == 0) return;
+    if (rectBatchCount >= MAX_BATCH_RECTS) FlushRectBatch();
+    InitializeRectIndices();
+    color = DrawColor(color);
+    SetQuadVertices(rectBatchVertices + rectBatchCount * 20, (float)x, (float)y, (float)width, (float)height);
+    rectBatchColors[rectBatchCount++] = color;
 }
 
 void FlushRectBatch() {
     if (rectBatchCount == 0) return;
-    glEnable(GL_BLEND);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    SetBlend(true);
     int startRect = 0;
-    Color currentColor = rectBatch[0].color;
+    Color currentColor = rectBatchColors[0];
     for (int i = 1; i <= rectBatchCount; i++) {
-        bool colorChanged = i == rectBatchCount || 
-            memcmp(&rectBatch[i].color, &currentColor, sizeof(Color)) != 0;
-        if (colorChanged) {
-            int rectCount = i - startRect;
-            GLfloat tempVertices[MAX_BATCH_RECTS * 20];
-            for (int j = 0; j < rectCount; j++) {
-                memcpy(&tempVertices[j * 20], rectBatch[startRect + j].vertices, 20 * sizeof(GLfloat));
-            }
-            GLuint textureID = GetCachedTexture(currentColor, true, false, NULL, 0, 0);
-            glBindTexture(GL_TEXTURE_2D, textureID);
-            RenderShader((ShaderObject){
-                camera, 
-                shaderdefault, 
-                tempVertices, 
-                rectIndices,
-                rectCount * 20 * sizeof(GLfloat),
-                rectCount * 6 * sizeof(GLuint),
-                camera.transform
-            });
-            if (i < rectBatchCount) {
-                startRect = i;
-                currentColor = rectBatch[i].color;
-            }
+        if (i < rectBatchCount && SameColor(rectBatchColors[i], currentColor)) continue;
+        int count = i - startRect;
+        BindTexture(GetCachedTexture(currentColor, true, false, NULL, 0, 0));
+        RenderShader((ShaderObject){
+            camera,
+            shaderdefault,
+            rectBatchVertices + startRect * 20,
+            rectIndices,
+            (size_t)count * 20 * sizeof(GLfloat),
+            (size_t)count * 6 * sizeof(GLuint),
+            camera.transform,
+            false
+        });
+        if (i < rectBatchCount) {
+            startRect = i;
+            currentColor = rectBatchColors[i];
         }
     }
-    UnbindTexture();
     rectBatchCount = 0;
 }
 
 void DrawRectBorder(int x, int y, int width, int height, int thickness, Color color) {
-    if (color.a == 0) color.a = 255;
+    if (width <= 0 || height <= 0 || thickness <= 0) return;
+    thickness = MinInt(thickness, MinInt(width, height));
     DrawRect(x, y, width, thickness, color);
     DrawRect(x, y + height - thickness, width, thickness, color);
-    DrawRect(x, y + thickness, thickness, height - (thickness * 2), color);
-    DrawRect(x + width - thickness, y + thickness, thickness, height - (thickness * 2), color);
+    int middle = height - thickness * 2;
+    if (middle > 0) {
+        DrawRect(x, y + thickness, thickness, middle, color);
+        DrawRect(x + width - thickness, y + thickness, thickness, middle, color);
+    }
 }
 
 void DrawLine(float x0, float y0, float x1, float y1, int thickness, Color color) {
-    if (color.a == 0) color.a = 255;
+    if (thickness <= 0) return;
+    color = DrawColor(color);
     float dx = x1 - x0;
     float dy = y1 - y0;
-    float length = sqrt(dx * dx + dy * dy);
-    float angle = atan2(dy, dx);
-    float halfThickness = thickness / 2.0f;
-    float offsetX = halfThickness * cos(angle + M_PI / 2.0f);
-    float offsetY = halfThickness * sin(angle + M_PI / 2.0f);
-    GLfloat x2 = x0 - offsetX;
-    GLfloat y2 = y0 - offsetY;
-    GLfloat x3 = x0 + offsetX;
-    GLfloat y3 = y0 + offsetY;
-    GLfloat x4 = x1 + offsetX;
-    GLfloat y4 = y1 + offsetY;
-    GLfloat x5 = x1 - offsetX;
-    GLfloat y5 = y1 - offsetY;
-    GLuint textureID = GetCachedTexture(color, true, false, NULL, 0, 0);
-    glEnable(GL_BLEND);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-    glBindTexture(GL_TEXTURE_2D, textureID);
+    float lengthSquared = dx * dx + dy * dy;
+    if (lengthSquared <= 0.000001f) {
+        DrawRect((int)(x0 - thickness * 0.5f), (int)(y0 - thickness * 0.5f), thickness, thickness, color);
+        return;
+    }
+    float scale = thickness * 0.5f / sqrtf(lengthSquared);
+    float offsetX = -dy * scale;
+    float offsetY = dx * scale;
+    BindTexture(GetCachedTexture(color, true, false, NULL, 0, 0));
+    SetBlend(true);
     Rect((RectObject){
-        { x2, y2, 0.0f },  // Bottom Left
-        { x3, y3, 0.0f },  // Bottom Right
-        { x5, y5, 0.0f },  // Top Left
-        { x4, y4, 0.0f },  // Top Right
-        shaderdefault,     // Shader
-        camera,            // Camera
+        {x0 - offsetX, y0 - offsetY, 0.0f}, // Bottom Left
+        {x0 + offsetX, y0 + offsetY, 0.0f}, // Bottom Right
+        {x1 - offsetX, y1 - offsetY, 0.0f}, // Top Left
+        {x1 + offsetX, y1 + offsetY, 0.0f}, // Top Right
+        shaderdefault,                      // Shader
+        camera,                             // Camera
     });
-    UnbindTexture();
+}
+
+typedef struct {
+    GLuint texture;
+    Color color;
+    int radius;
+    int thickness;
+    unsigned long lastUsed;
+    bool used;
+} CircleTexture;
+
+#define CIRCLE_CACHE_SIZE 128
+static CircleTexture circleCache[CIRCLE_CACHE_SIZE] = {0};
+static unsigned long circleAccessCounter = 1;
+
+static unsigned int CircleHash(int radius, int thickness, Color color) {
+    unsigned int hash = 2166136261u;
+    hash = (hash ^ (unsigned int)radius) * 16777619u;
+    hash = (hash ^ (unsigned int)thickness) * 16777619u;
+    hash = (hash ^ color.r) * 16777619u;
+    hash = (hash ^ color.g) * 16777619u;
+    hash = (hash ^ color.b) * 16777619u;
+    hash = (hash ^ color.a) * 16777619u;
+    return hash;
+}
+
+static GLuint CreateCircleTexture(int radius, int thickness, Color color) {
+    int outerRadius = radius + thickness;
+    int diameter = outerRadius * 2;
+    size_t size = (size_t)diameter * (size_t)diameter * 4;
+    unsigned char* pixels = calloc(size, 1);
+    if (!pixels) return 0;
+    int innerSquared = radius * radius;
+    int outerSquared = outerRadius * outerRadius;
+    for (int y = 0; y < diameter; y++) {
+        int dy = y - outerRadius;
+        for (int x = 0; x < diameter; x++) {
+            int dx = x - outerRadius;
+            int distanceSquared = dx * dx + dy * dy;
+            bool visible = thickness == 0 ? distanceSquared < innerSquared : distanceSquared < outerSquared && distanceSquared >= innerSquared;
+            if (!visible) continue;
+            size_t index = ((size_t)y * diameter + x) * 4;
+            pixels[index + 0] = color.r;
+            pixels[index + 1] = color.g;
+            pixels[index + 2] = color.b;
+            pixels[index + 3] = color.a;
+        }
+    }
+    GLuint texture = CreateTextureFromBitmap(pixels, diameter, diameter, true);
+    free(pixels);
+    return texture;
+}
+
+static GLuint GetCircleTexture(int radius, int thickness, Color color) {
+    unsigned int start = CircleHash(radius, thickness, color) % CIRCLE_CACHE_SIZE;
+    int empty = -1;
+    for (int i = 0; i < CIRCLE_CACHE_SIZE; i++) {
+        int index = (start + i) % CIRCLE_CACHE_SIZE;
+        CircleTexture* entry = &circleCache[index];
+        if (!entry->used) {
+            empty = index;
+            break;
+        }
+        if (entry->radius == radius && entry->thickness == thickness && SameColor(entry->color, color)) {
+            entry->lastUsed = circleAccessCounter++;
+            return entry->texture;
+        }
+    }
+    int index = empty;
+    if (index < 0) {
+        unsigned long oldest = ULONG_MAX;
+        for (int i = 0; i < CIRCLE_CACHE_SIZE; i++) {
+            if (circleCache[i].lastUsed < oldest) {
+                oldest = circleCache[i].lastUsed;
+                index = i;
+            }
+        }
+        if (renderTexture == circleCache[index].texture) UnbindTexture();
+        glDeleteTextures(1, &circleCache[index].texture);
+    }
+    GLuint texture = CreateCircleTexture(radius, thickness, color);
+    if (!texture) return 0;
+    circleCache[index] = (CircleTexture){texture, color, radius, thickness, circleAccessCounter++, true};
+    return texture;
+}
+
+void CleanUpCircleCache(void) {
+    for (int i = 0; i < CIRCLE_CACHE_SIZE; i++) {
+        if (!circleCache[i].used || !circleCache[i].texture) continue;
+        if (renderTexture == circleCache[i].texture) UnbindTexture();
+        glDeleteTextures(1, &circleCache[i].texture);
+    }
+    memset(circleCache, 0, sizeof(circleCache));
+    circleAccessCounter = 1;
 }
 
 void DrawCircle(int x, int y, int r, Color color) {
-    if (color.a == 0) color.a = 255;
-    int diameter = r * 2;
-    unsigned char* pixels = (unsigned char*)malloc(diameter * diameter * 4);
-    for (int i = 0; i < diameter; i++) {
-        for (int j = 0; j < diameter; j++) {
-            float dx = i - r;
-            float dy = j - r;
-            float distance = sqrt(dx * dx + dy * dy);
-            if (distance < r) {
-                pixels[(i * diameter + j) * 4] = color.r;
-                pixels[(i * diameter + j) * 4 + 1] = color.g;
-                pixels[(i * diameter + j) * 4 + 2] = color.b;
-                pixels[(i * diameter + j) * 4 + 3] = color.a;
-            } else {
-                pixels[(i * diameter + j) * 4] = 0;
-                pixels[(i * diameter + j) * 4 + 1] = 0;
-                pixels[(i * diameter + j) * 4 + 2] = 0;
-                pixels[(i * diameter + j) * 4 + 3] = 0;
-            }
-        }
-    }
-    GLuint textureID = GetCachedTexture(color, true, true, pixels, diameter, diameter);
-    free(pixels);
-    glEnable(GL_BLEND);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-    glBindTexture(GL_TEXTURE_2D, textureID);
+    if (r <= 0) return;
+    color = DrawColor(color);
+    GLuint textureID = GetCircleTexture(r, 0, color);
+    if (!textureID) return;
+    BindTexture(textureID);
+    SetBlend(true);
     Rect((RectObject){
-        { x - r, y - r, 0.0f }, // Bottom Left
-        { x + r, y - r, 0.0f }, // Bottom Right
-        { x - r, y + r, 0.0f }, // Top Left
-        { x + r, y + r, 0.0f }, // Top Right
-        shaderdefault,          // Shader
-        camera,                 // Camera
+        {x - r, y - r, 0.0f}, // Bottom Left
+        {x + r, y - r, 0.0f}, // Bottom Right
+        {x - r, y + r, 0.0f}, // Top Left
+        {x + r, y + r, 0.0f}, // Top Right
+        shaderdefault,         // Shader
+        camera,                // Camera
     });
-    UnbindTexture();
 }
 
 void DrawCircleBorder(int x, int y, int r, int thickness, Color color) {
-    if (color.a == 0) color.a = 255;
-    int diameter = r * 2 + thickness * 2;
-    unsigned char* pixels = (unsigned char*)malloc(diameter * diameter * 4);
-    for (int i = 0; i < diameter; i++) {
-        for (int j = 0; j < diameter; j++) {
-            float dx = i - r - thickness;
-            float dy = j - r - thickness;
-            float distance = sqrt(dx * dx + dy * dy);
-            if (distance < r + thickness && distance >= r) {
-                pixels[(i * diameter + j) * 4] = color.r;
-                pixels[(i * diameter + j) * 4 + 1] = color.g;
-                pixels[(i * diameter + j) * 4 + 2] = color.b;
-                pixels[(i * diameter + j) * 4 + 3] = color.a;
-            } else {
-                pixels[(i * diameter + j) * 4] = 0;
-                pixels[(i * diameter + j) * 4 + 1] = 0;
-                pixels[(i * diameter + j) * 4 + 2] = 0;
-                pixels[(i * diameter + j) * 4 + 3] = 0;
-            }
-        }
-    }
-    GLuint textureID = GetCachedTexture(color, true, true, pixels, diameter, diameter);
-    free(pixels);
-    glEnable(GL_BLEND);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-    glBindTexture(GL_TEXTURE_2D, textureID);
+    if (r <= 0 || thickness <= 0) return;
+    color = DrawColor(color);
+    GLuint textureID = GetCircleTexture(r, thickness, color);
+    if (!textureID) return;
+    int outer = r + thickness;
+    BindTexture(textureID);
+    SetBlend(true);
     Rect((RectObject){
-        { x - r - thickness, y - r - thickness, 0.0f }, // Bottom Left
-        { x + r + thickness, y - r - thickness, 0.0f }, // Bottom Right
-        { x - r - thickness, y + r + thickness, 0.0f }, // Top Left
-        { x + r + thickness, y + r + thickness, 0.0f }, // Top Right
-        shaderdefault,                                // Shader
-        camera,                                       // Camera
+        {x - outer, y - outer, 0.0f}, // Bottom Left
+        {x + outer, y - outer, 0.0f}, // Bottom Right
+        {x - outer, y + outer, 0.0f}, // Top Left
+        {x + outer, y + outer, 0.0f}, // Top Right
+        shaderdefault,                // Shader
+        camera,                       // Camera
     });
-    UnbindTexture();
 }
 
-
 void DrawTriangle(int x1, int y1, int x2, int y2, int x3, int y3, Color color) {
-    if (color.a == 0) color.a = 255;
-    GLuint textureID = GetCachedTexture(color, true, false, NULL, 0, 0);
-    glEnable(GL_BLEND);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-    glBindTexture(GL_TEXTURE_2D, textureID);
+    color = DrawColor(color);
+    BindTexture(GetCachedTexture(color, true, false, NULL, 0, 0));
+    SetBlend(true);
     Triangle((TriangleObject){
         {x1, y1, 0.0f}, // Vert0: x, y, z
         {x2, y2, 0.0f}, // Vert1: x, y, z
@@ -245,7 +284,6 @@ void DrawTriangle(int x1, int y1, int x2, int y2, int x3, int y3, Color color) {
         shaderdefault,  // Shader
         camera,         // Camera
     });
-    UnbindTexture();
 }
 
 void DrawTriangleBorder(int x1, int y1, int x2, int y2, int x3, int y3, int thickness, Color color) {
@@ -255,20 +293,20 @@ void DrawTriangleBorder(int x1, int y1, int x2, int y2, int x3, int y3, int thic
 }
 
 void DrawCube(GLfloat size, GLfloat x, GLfloat y, GLfloat z, GLfloat rotx, GLfloat roty, GLfloat rotz, Color color) {
-    if (color.a == 0) color.a = 255;
-    GLuint textureID = GetCachedTexture(color, true, false, NULL, 0, 0);
-    glEnable(GL_BLEND);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-    glBindTexture(GL_TEXTURE_2D, textureID);
-    Cube((CubeObject){{
-        x,      y,      z,    // Position: x, y, z
-        0.0f,    0.0f,   0.0f, // LocalPosition: x, y, z
-        rotx,   roty,   rotz, // Rotation: x, y, z
-    }, size,                  // Size
-    shaderdefault,            // Shader
-    camera,                   // Camera
+    if (size <= 0.0f) return;
+    color = DrawColor(color);
+    BindTexture(GetCachedTexture(color, true, false, NULL, 0, 0));
+    SetBlend(true);
+    Cube((CubeObject){
+        .transform = {
+            .position = {x, y, z},              // Position: x, y, z
+            .localposition = {0.0f, 0.0f, 0.0f}, // LocalPosition: x, y, z
+            .rotation = {rotx, roty, rotz}       // Rotation: x, y, z
+        },
+        .size = size,             // Size
+        .shader = shaderdefault,  // Shader
+        .cam = camera             // Camera
     });
-    UnbindTexture();
 }
 
 #include "image.c"

@@ -1,9 +1,12 @@
 
 Audio audio = {
-    2,
-    48000,
-    "\0"
+    .channels = 2,
+    .sample_rate = 48000,
+    .sink_title = "\0",
+    .engine = {0}
 };
+
+static bool audioInitialized = false;
 
 // Engine "no sound preloaded"
 
@@ -208,41 +211,39 @@ ma_result ma_engine_mod_init(const ma_engine_config* pConfig, ma_engine* pEngine
         return result;
 }
 
-void AudioInit(){       
-    ma_result result;
-    ma_engine_config engineConfig;
-    engineConfig = ma_engine_config_init();
-    engineConfig.channels   = audio.channels;
+void AudioInit() {       
+    if (audioInitialized) ma_engine_uninit(&audio.engine);
+    ma_engine_config engineConfig = ma_engine_config_init();
+    engineConfig.channels = audio.channels;
     engineConfig.sampleRate = audio.sample_rate;
-    if(audio.sink_title != "\0") {
-        result = ma_engine_mod_init(&engineConfig, &audio.engine,audio.sink_title);
-    } else {
-        result = ma_engine_mod_init(&engineConfig, &audio.engine,window.title);
-    }
-    if (result != MA_SUCCESS) {
-        printf("Audio Engine initialization failed");
-    }
+    const char* sinkTitle = audio.sink_title && audio.sink_title[0] ? audio.sink_title : window.title;
+    ma_result result = ma_engine_mod_init(&engineConfig, &audio.engine, sinkTitle);
+    audioInitialized = result == MA_SUCCESS;
+    if (!audioInitialized) printf("Audio Engine initialization failed\n");
 }
 
-void AudioVolume(float value){
-    ma_engine_set_volume(&audio.engine,value);
+void AudioVolume(float value) {
+    if (audioInitialized) ma_engine_set_volume(&audio.engine, value);
 }
 
-float GetAudioVolume(){
-    return ma_engine_get_volume(&audio.engine);
+float GetAudioVolume() {
+    return audioInitialized ? ma_engine_get_volume(&audio.engine) : 0.0f;
 }
 
-void AudioPlay(char *file){
-    ma_engine_play_sound(&audio.engine, file, NULL);
+void AudioPlay(char* file) {
+    if (audioInitialized && file) ma_engine_play_sound(&audio.engine, file, NULL);
 }
 
 void AudioStop() {
-    if(&audio.engine){ma_engine_uninit(&audio.engine);}
+    if (!audioInitialized) return;
+    ma_engine_uninit(&audio.engine);
+    audioInitialized = false;
 }
 
 // Sound loading
 
 Sound* SoundLoad(char *file) {
+    if (!audioInitialized || !file) return NULL;
     Sound* sound = (Sound*)malloc(sizeof(Sound));
     if (sound == NULL) {
         printf("Failed to allocate memory for Sound\n");
@@ -258,11 +259,11 @@ Sound* SoundLoad(char *file) {
 }
 
 void SoundPlay(Sound* sound) {
-    ma_sound_start(&sound->ma);
+    if (sound) ma_sound_start(&sound->ma);
 }
 
 void SoundStop(Sound* sound) {
-    ma_sound_stop(&sound->ma);
+    if (sound) ma_sound_stop(&sound->ma);
 }
 
 void SetSoundStartTime(Sound* sound, ma_uint64 time) {
@@ -278,15 +279,15 @@ ma_uint64 GetSoundTime(Sound* sound) {
 }
 
 bool GetSoundEnd(Sound* sound) {
-    return ma_sound_at_end(&sound->ma);
+    return sound ? ma_sound_at_end(&sound->ma) : true;
 }
 
 bool GetSoundPlaying(Sound* sound) {
-    return ma_sound_is_playing(&sound->ma);
+    return sound ? ma_sound_is_playing(&sound->ma) : false;
 }
 
 float GetSoundPitch(Sound* sound) {
-    return ma_sound_get_pitch(&sound->ma);
+    return sound ? ma_sound_get_pitch(&sound->ma) : 0.0f;
 }
 
 void SetSoundPitch(Sound* sound, float value) {
@@ -294,12 +295,12 @@ void SetSoundPitch(Sound* sound, float value) {
 }
 
 void SetSoundPitchSemitones(Sound* sound, float semitones) {
-    float pitchMultiplier = pow(2.0f, semitones / 12.0f);
+    float pitchMultiplier = powf(2.0f, semitones / 12.0f);
     ma_sound_set_pitch(&sound->ma, pitchMultiplier);
 }
 
 float GetSoundPan(Sound* sound) {
-    return ma_sound_get_pan(&sound->ma);
+    return sound ? ma_sound_get_pan(&sound->ma) : 0.0f;
 }
 
 void SetSoundPan(Sound* sound, float value) {
@@ -307,7 +308,7 @@ void SetSoundPan(Sound* sound, float value) {
 }
 
 bool GetSoundLoop(Sound* sound) {
-    return ma_sound_is_looping(&sound->ma);
+    return sound ? ma_sound_is_looping(&sound->ma) : false;
 }
 
 void SetSoundLoop(Sound* sound, bool value) {

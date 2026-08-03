@@ -4,6 +4,8 @@
 #include <GL/glew.h>
 #include <GL/gl.h>
 #include <stdbool.h>
+#include <stdint.h>
+#include <stddef.h>
 #include <time.h>
 
 typedef struct {
@@ -293,6 +295,10 @@ void WindowClose();
         Shader LoadShader(const char* vertex, const char* fragment);
         Shader ShaderHotReload(Shader shader);
         void DeleteShader(Shader shader);
+        void BindTexture(GLuint texture);
+        void SetBlend(bool enabled);
+        void UseShader(GLuint program);
+        void ResetRenderState(void);
         void UnbindTexture();
         void glTexOpt(GLint filter, GLint warp);
         GLint GLuint1i(Shader shader, const char* var, float in);
@@ -333,8 +339,8 @@ void WindowClose();
             Shader shader;
             GLfloat *vertices;
             GLuint *indices;
-            GLfloat size_vertices;
-            GLfloat size_indices;
+            size_t size_vertices;
+            size_t size_indices;
             Transform transform;
             bool is3d;
         } ShaderObject;
@@ -418,6 +424,7 @@ void WindowClose();
         bool isBitmap;
         bool used;
         unsigned long lastUsed;
+        uint64_t key;
     } CachedTexture;
 
     #define TEXTURE_CACHE_SIZE 256
@@ -426,7 +433,6 @@ void WindowClose();
     GLuint CreateTextureFromColor(Color color, bool linear);
     GLuint GetCachedTexture(Color color, bool linear, bool isBitmap, const unsigned char* bitmapData, int width, int height);
     void CleanUpTextureCache(void);
-    void ResetTextureCache(void);
 // Draw
     void DrawRect(int x, int y, int width, int height, Color color);
     void DrawRectBatch(int x, int y, int width, int height, Color color);
@@ -438,6 +444,7 @@ void WindowClose();
     void DrawTriangle(int x1, int y1, int x2, int y2, int x3, int y3, Color color);
     void DrawTriangleBorder(int x1, int y1, int x2, int y2, int x3, int y3, int thickness, Color color);
     void DrawCube(GLfloat size, GLfloat x, GLfloat y, GLfloat z, GLfloat rotx, GLfloat roty, GLfloat rotz, Color color);
+    void CleanUpCircleCache(void);
 // Image
     #define STB_IMAGE_IMPLEMENTATION
     #include <stb_image.h>
@@ -535,6 +542,7 @@ void WindowClose();
     
     typedef struct {
         uint32_t c;
+        FT_Face face;
         float fontSize;
         int width;
         int height;
@@ -543,6 +551,9 @@ void WindowClose();
     
     typedef struct {
         float fontSize;
+        FT_Face face;
+        bool nearest;
+        bool subpixel;
         Font font;
         bool used;
         unsigned long lastUsed;
@@ -550,6 +561,7 @@ void WindowClose();
     
     typedef struct {
         char text[MAX_CACHED_STRING_LEN];
+        FT_Face face;
         float fontSize;
         TextSize size;
         bool valid;
@@ -573,3 +585,4 @@ void WindowClose();
     void DrawText(int x, int y, Font font, float fontSize, const char* text, Color color);
     void DrawTextBatch(int x, int y, Font font, float fontSize, const char* text, Color color);
     void FlushTextBatch();
+    void CleanUpFontCache(void);

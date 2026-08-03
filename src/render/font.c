@@ -1,686 +1,579 @@
 
 CodepointMap codepointMap[CODEPOINT_MAP_SIZE] = {0};
 
+static FT_Face currentPixelFace = NULL;
+static float currentPixelSize = 0.0f;
+static GLuint fontTextures[FONT_CACHE_SIZE * 2] = {0};
+static int fontTextureCount = 0;
+static FT_Face loadedFaces[FONT_CACHE_SIZE] = {0};
+static FT_Library loadedLibraries[FONT_CACHE_SIZE] = {0};
+static int loadedFontCount = 0;
+
+static bool SetFontPixelSize(FT_Face face, float size) {
+    if (!face) return false;
+    if (currentPixelFace == face && fabsf(currentPixelSize - size) < 0.01f) return true;
+    if (FT_Set_Pixel_Sizes(face, 0, (FT_UInt)size) != 0) return false;
+    currentPixelFace = face;
+    currentPixelSize = size;
+    return true;
+}
+
+static void RegisterFontTexture(GLuint texture) {
+    if (!texture) return;
+    for (int i = 0; i < fontTextureCount; i++) {
+        if (fontTextures[i] == texture) return;
+    }
+    if (fontTextureCount < (int)(sizeof(fontTextures) / sizeof(fontTextures[0]))) {
+        fontTextures[fontTextureCount++] = texture;
+    }
+}
+
+static void UnregisterFontTexture(GLuint texture) {
+    for (int i = 0; i < fontTextureCount; i++) {
+        if (fontTextures[i] != texture) continue;
+        fontTextures[i] = fontTextures[--fontTextureCount];
+        return;
+    }
+}
+
+static void RegisterLoadedFont(FT_Library library, FT_Face face) {
+    for (int i = 0; i < loadedFontCount; i++) {
+        if (loadedFaces[i] == face) return;
+    }
+    if (loadedFontCount < FONT_CACHE_SIZE) {
+        loadedLibraries[loadedFontCount] = library;
+        loadedFaces[loadedFontCount] = face;
+        loadedFontCount++;
+    }
+}
+
 int GetGlyphIndex(uint32_t codepoint) {
+    if (codepoint >= 32 && codepoint < 32 + MAX_GLYPHS) return (int)codepoint - 32;
     unsigned int hash = codepoint % CODEPOINT_MAP_SIZE;
     for (int i = 0; i < CODEPOINT_MAP_SIZE; i++) {
         unsigned int index = (hash + i) % CODEPOINT_MAP_SIZE;
         if (codepointMap[index].used && codepointMap[index].codepoint == codepoint) {
             return codepointMap[index].glyphIndex;
         }
-        if (!codepointMap[index].used) {
-            break;
-        }
+        if (!codepointMap[index].used) break;
     }
     return 0;
 }
 
 int CalculateAtlasSize(int numGlyphs, float fontSize, int oversampling) {
-    float estimatedAreaPerGlyph = (fontSize * fontSize) * oversampling * oversampling;
-    float totalArea = estimatedAreaPerGlyph * numGlyphs;
-    int atlasDimension = (int)sqrt(totalArea);
-    int powerOfTwo = 1;
-    while (powerOfTwo < atlasDimension) {
-        powerOfTwo *= 2;
-    }
+    if (oversampling < 1) oversampling = 1;
+    float estimatedAreaPerGlyph = fontSize * fontSize * 0.55f * oversampling * oversampling;
+    int atlasDimension = (int)ceilf(sqrtf(estimatedAreaPerGlyph * numGlyphs * 1.25f));
+    int powerOfTwo = 256;
+    while (powerOfTwo < atlasDimension) powerOfTwo *= 2;
     return powerOfTwo;
 }
 
 Font GenAtlas(Font font) {
-    if (font.fontSize <= 1) font.fontSize = ATLAS_FONT_SIZE;
-    if (font.oversampling <= 1) font.oversampling = 0;
-    if (!font.face) return font;
-    FT_Error error = FT_Set_Pixel_Sizes(font.face, 0, font.fontSize);
-    if (error) {
-        return font;
-    }
-    if (font.subpixel) {
-        FT_Library_SetLcdFilter(font.library, FT_LCD_FILTER_DEFAULT);
-    }
-    int maxGlyphWidth = (int)(font.fontSize * 1.5f);
-    int maxGlyphHeight = (int)(font.fontSize * 1.5f);
-    int glyphsPerRow = 16;
-    int atlasWidth = glyphsPerRow * maxGlyphWidth;
-    int atlasHeight = glyphsPerRow * maxGlyphHeight;
-    atlasWidth = 1;
-    while (atlasWidth < glyphsPerRow * maxGlyphWidth) {
-        atlasWidth *= 2;
-    }
-    atlasHeight = 1;
-    while (atlasHeight < glyphsPerRow * maxGlyphHeight) {
-        atlasHeight *= 2;
-    }
-    font.atlasWidth = atlasWidth;
-    font.atlasHeight = atlasHeight;
-    font.atlasData = (unsigned char*)calloc(font.atlasWidth * font.atlasHeight * 4, 1);
-    if (!font.atlasData) {
-        return font;
-    }
-    int cellWidth = atlasWidth / glyphsPerRow;
-    int cellHeight = atlasHeight / glyphsPerRow;
-    for (int i = 0; i < MAX_GLYPHS; ++i) {
+    if (font.fontSize <= 1.0f) font.fontSize = ATLAS_FONT_SIZE;
+    if (font.oversampling < 1) font.oversampling = 1;
+    if (!font.face || !SetFontPixelSize(font.face, font.fontSize)) return font;
+    if (font.subpixel) FT_Library_SetLcdFilter(font.library, FT_LCD_FILTER_DEFAULT);
+    stbrp_rect rects[MAX_GLYPHS] = {0};
+    int maxDimension = 1;
+    FT_Int32 loadFlags = FT_LOAD_RENDER | FT_LOAD_FORCE_AUTOHINT;
+    if (font.subpixel) loadFlags |= FT_LOAD_TARGET_LCD;
+    for (int i = 0; i < MAX_GLYPHS; i++) {
         int codepoint = 32 + i;
-        int row = i / glyphsPerRow;
-        int col = i % glyphsPerRow;
-        int x = col * cellWidth;
-        int y = row * cellHeight;
-        if (font.subpixel) {
-            error = FT_Load_Char(font.face, codepoint, FT_LOAD_RENDER | FT_LOAD_FORCE_AUTOHINT | FT_LOAD_TARGET_LCD);
-        } else {
-            error = FT_Load_Char(font.face, codepoint, FT_LOAD_RENDER | FT_LOAD_FORCE_AUTOHINT);
+        rects[i].id = i;
+        if (FT_Load_Char(font.face, codepoint, loadFlags) != 0) {
+            rects[i].w = 1;
+            rects[i].h = 1;
+            continue;
         }
-        if (error) {
-            Glyph* glyph = &font.glyphs[i];
-            glyph->x0 = x;
-            glyph->y0 = y;
-            glyph->x1 = x;
-            glyph->y1 = y;
-            glyph->xoff = 0;
-            glyph->yoff = 0;
-            glyph->xadvance = font.fontSize / 3;
-            glyph->u0 = (float)x / (float)font.atlasWidth;
-            glyph->v0 = (float)y / (float)font.atlasHeight;
-            glyph->u1 = glyph->u0;
-            glyph->v1 = glyph->v0;
+        FT_Bitmap* bitmap = &font.face->glyph->bitmap;
+        int width = font.subpixel ? (int)bitmap->width / 3 : (int)bitmap->width;
+        int height = (int)bitmap->rows;
+        rects[i].w = (stbrp_coord)MaxInt(width + 2, 1);
+        rects[i].h = (stbrp_coord)MaxInt(height + 2, 1);
+        maxDimension = MaxInt(maxDimension, MaxInt(rects[i].w, rects[i].h));
+    }
+    int atlasSize = CalculateAtlasSize(MAX_GLYPHS, font.fontSize, font.oversampling);
+    while (atlasSize < maxDimension) atlasSize *= 2;
+    bool packed = false;
+    while (!packed && atlasSize <= 8192) {
+        stbrp_node* nodes = malloc((size_t)atlasSize * sizeof(stbrp_node));
+        if (!nodes) return font;
+        stbrp_context context;
+        stbrp_init_target(&context, atlasSize, atlasSize, nodes, atlasSize);
+        for (int i = 0; i < MAX_GLYPHS; i++) {
+            rects[i].x = 0;
+            rects[i].y = 0;
+            rects[i].was_packed = 0;
+        }
+        packed = stbrp_pack_rects(&context, rects, MAX_GLYPHS) != 0;
+        free(nodes);
+        if (!packed) atlasSize *= 2;
+    }
+    if (!packed) return font;
+    font.atlasWidth = atlasSize;
+    font.atlasHeight = atlasSize;
+    size_t atlasBytes = (size_t)atlasSize * (size_t)atlasSize * 4;
+    font.atlasData = calloc(atlasBytes, 1);
+    if (!font.atlasData) return font;
+    for (int i = 0; i < MAX_GLYPHS; i++) {
+        int codepoint = 32 + i;
+        Glyph* glyph = &font.glyphs[i];
+        int x = rects[i].x + 1;
+        int y = rects[i].y + 1;
+        if (FT_Load_Char(font.face, codepoint, loadFlags) != 0) {
+            *glyph = (Glyph){x, y, x, y, 0, 0, font.fontSize / 3.0f,
+                (float)x / atlasSize, (float)y / atlasSize,
+                (float)x / atlasSize, (float)y / atlasSize};
             continue;
         }
         FT_GlyphSlot slot = font.face->glyph;
         FT_Bitmap* bitmap = &slot->bitmap;
-        if (bitmap->width > 0 && bitmap->rows > 0) {
-            int glyphWidth = font.subpixel ? bitmap->width / 3 : bitmap->width;
-            int glyphHeight = bitmap->rows;
-            int offsetX = (cellWidth - glyphWidth) / 2;
-            int offsetY = (cellHeight - glyphHeight) / 2;
-            x += offsetX;
-            y += offsetY;
+        int glyphWidth = font.subpixel ? (int)bitmap->width / 3 : (int)bitmap->width;
+        int glyphHeight = (int)bitmap->rows;
+        for (int row = 0; row < glyphHeight; row++) {
+            const unsigned char* src = bitmap->pitch >= 0 ? bitmap->buffer + row * bitmap->pitch : bitmap->buffer + (glyphHeight - 1 - row) * -bitmap->pitch;
+            unsigned char* dst = font.atlasData + ((size_t)(y + row) * atlasSize + x) * 4;
             if (font.subpixel) {
-                for (int row = 0; row < bitmap->rows; ++row) {
-                    for (int col = 0; col < bitmap->width; col += 3) {
-                        int srcIndex = row * bitmap->pitch + col;
-                        int dstIndex = ((y + row) * font.atlasWidth + (x + col / 3)) * 4;
-                        font.atlasData[dstIndex + 0] = 255;
-                        font.atlasData[dstIndex + 1] = 255;
-                        font.atlasData[dstIndex + 2] = 255;
-                        int r = col < bitmap->width ? bitmap->buffer[srcIndex] : 0;
-                        int g = col+1 < bitmap->width ? bitmap->buffer[srcIndex+1] : 0;
-                        int b = col+2 < bitmap->width ? bitmap->buffer[srcIndex+2] : 0;
-                        font.atlasData[dstIndex + 3] = (r + g + b) / 3;
-                    }
+                for (int col = 0; col < glyphWidth; col++) {
+                    int srcIndex = col * 3;
+                    int alpha = (src[srcIndex] + src[srcIndex + 1] + src[srcIndex + 2]) / 3;
+                    dst[col * 4 + 0] = 255;
+                    dst[col * 4 + 1] = 255;
+                    dst[col * 4 + 2] = 255;
+                    dst[col * 4 + 3] = (unsigned char)alpha;
                 }
             } else {
-                for (int row = 0; row < bitmap->rows; ++row) {
-                    unsigned char* dst = &font.atlasData[((y + row) * font.atlasWidth + x) * 4];
-                    unsigned char* src = &bitmap->buffer[row * bitmap->pitch];
-                    for (int col = 0; col < bitmap->width; ++col) {
-                        *dst++ = 255;    // R
-                        *dst++ = 255;    // G
-                        *dst++ = 255;    // B
-                        *dst++ = *src++; // A
-                    }
+                for (int col = 0; col < glyphWidth; col++) {
+                    dst[col * 4 + 0] = 255;
+                    dst[col * 4 + 1] = 255;
+                    dst[col * 4 + 2] = 255;
+                    dst[col * 4 + 3] = src[col];
                 }
             }
-            Glyph* glyph = &font.glyphs[i];
-            glyph->x0 = x;
-            glyph->y0 = y;
-            glyph->x1 = x + (font.subpixel ? bitmap->width / 3 : bitmap->width);
-            glyph->y1 = y + bitmap->rows;
-            glyph->xoff = slot->bitmap_left;
-            glyph->yoff = slot->bitmap_top;
-            glyph->xadvance = slot->advance.x >> 6;
-            glyph->u0 = (float)glyph->x0 / (float)font.atlasWidth;
-            glyph->v0 = (float)glyph->y0 / (float)font.atlasHeight;
-            glyph->u1 = (float)glyph->x1 / (float)font.atlasWidth;
-            glyph->v1 = (float)glyph->y1 / (float)font.atlasHeight;
-        } else {
-            Glyph* glyph = &font.glyphs[i];
-            glyph->x0 = x;
-            glyph->y0 = y;
-            glyph->x1 = x;
-            glyph->y1 = y;
-            glyph->xoff = slot->bitmap_left;
-            glyph->yoff = slot->bitmap_top;
-            glyph->xadvance = slot->advance.x >> 6;
-            glyph->u0 = (float)x / (float)font.atlasWidth;
-            glyph->v0 = (float)y / (float)font.atlasHeight;
-            glyph->u1 = glyph->u0;
-            glyph->v1 = glyph->v0;
         }
+        glyph->x0 = x;
+        glyph->y0 = y;
+        glyph->x1 = x + glyphWidth;
+        glyph->y1 = y + glyphHeight;
+        glyph->xoff = slot->bitmap_left;
+        glyph->yoff = slot->bitmap_top;
+        glyph->xadvance = slot->advance.x >> 6;
+        glyph->u0 = (float)glyph->x0 / atlasSize;
+        glyph->v0 = (float)glyph->y0 / atlasSize;
+        glyph->u1 = (float)glyph->x1 / atlasSize;
+        glyph->v1 = (float)glyph->y1 / atlasSize;
     }
     glGenTextures(1, &font.textureID);
-    glBindTexture(GL_TEXTURE_2D, font.textureID);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, font.atlasWidth, font.atlasHeight, 0, GL_RGBA, GL_UNSIGNED_BYTE, font.atlasData);
+    BindTexture(font.textureID);
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, atlasSize, atlasSize, 0, GL_RGBA, GL_UNSIGNED_BYTE, font.atlasData);
     glTexOpt(font.nearest ? GL_NEAREST : GL_LINEAR, GL_CLAMP_TO_EDGE);
-    stbi_write_jpg("/tmp/atlas.jpg", font.atlasWidth, font.atlasHeight, 1, font.atlasData, font.atlasWidth);
+    RegisterFontTexture(font.textureID);
     free(font.atlasData);
     font.atlasData = NULL;
+    font.glyphCount = MAX_GLYPHS;
     return font;
 }
 
 bool FindSpaceInAtlas(Font* font, int width, int height, int* x, int* y) {
-    static unsigned char* atlasBitmap = NULL;
-    static int lastAtlasWidth = 0;
-    static int lastAtlasHeight = 0;
-    if (atlasBitmap == NULL || lastAtlasWidth != font->atlasWidth || lastAtlasHeight != font->atlasHeight) {
-        if (atlasBitmap) free(atlasBitmap);
-        atlasBitmap = (unsigned char*)calloc(font->atlasWidth * font->atlasHeight, 1);
-        lastAtlasWidth = font->atlasWidth;
-        lastAtlasHeight = font->atlasHeight;
-        for (int i = 0; i < font->glyphCount; i++) {
-            Glyph* g = &font->glyphs[i];
-            for (int iy = g->y0; iy < g->y1; iy++) {
-                for (int ix = g->x0; ix < g->x1; ix++) {
-                    if (ix >= 0 && ix < font->atlasWidth && iy >= 0 && iy < font->atlasHeight) {
-                        atlasBitmap[iy * font->atlasWidth + ix] = 1;
-                    }
-                }
-            }
-        }
-    }
-    for (int startY = 0; startY <= font->atlasHeight - height; startY++) {
-        for (int startX = 0; startX <= font->atlasWidth - width; startX++) {
-            bool fits = true;
-            for (int iy = 0; iy < height && fits; iy++) {
-                for (int ix = 0; ix < width && fits; ix++) {
-                    if (atlasBitmap[(startY + iy) * font->atlasWidth + (startX + ix)] != 0) {
-                        fits = false;
-                        break;
-                    }
-                }
-            }
-            if (fits) {
-                for (int iy = 0; iy < height; iy++) {
-                    for (int ix = 0; ix < width; ix++) {
-                        atlasBitmap[(startY + iy) * font->atlasWidth + (startX + ix)] = 1;
-                    }
-                }
-                *x = startX;
-                *y = startY;
-                return true;
-            }
-        }
-    }
+    if (!font || !x || !y || width <= 0 || height <= 0 || font->glyphCount >= MAX_GLYPHS) return false;
     return false;
 }
 
 int AddGlyphToAtlas(Font* font, uint32_t codepoint) {
-    int glyphIndex = GetGlyphIndex(codepoint);
-    if (glyphIndex > 0) {
-        return glyphIndex;
-    }
-    FT_Error error = FT_Load_Char(font->face, codepoint, FT_LOAD_RENDER | FT_LOAD_FORCE_AUTOHINT);
-    if (error) {
-        return 0;
-    }
-    int x, y;
-    if (!FindSpaceInAtlas(font, font->face->glyph->bitmap.width, font->face->glyph->bitmap.rows, &x, &y)) {
-        return 0;
-    }
-    int newGlyphIndex = font->glyphCount;
-    font->glyphCount++;
-    Glyph* glyph = &font->glyphs[newGlyphIndex];
-    FT_GlyphSlot slot = font->face->glyph;
-    unsigned int hash = codepoint % CODEPOINT_MAP_SIZE;
-    for (int i = 0; i < CODEPOINT_MAP_SIZE; i++) {
-        unsigned int index = (hash + i) % CODEPOINT_MAP_SIZE;
-        if (!codepointMap[index].used) {
-            codepointMap[index].codepoint = codepoint;
-            codepointMap[index].glyphIndex = newGlyphIndex;
-            codepointMap[index].used = true;
-            break;
-        }
-    }
-    return newGlyphIndex;
+    if (!font || !font->face) return 0;
+    if (codepoint >= 32 && codepoint < 32 + MAX_GLYPHS) return (int)codepoint - 32;
+    return 0;
 }
 
 Font LoadFont(const char* fontPath) {
     Font font = {0};
-    FT_Error error = FT_Init_FreeType(&font.library);
+    if (!fontPath) return font;
+    if (FT_Init_FreeType(&font.library) != 0) return font;
+    FT_Error error = FT_New_Face(font.library, fontPath, 0, &font.face);
     if (error) {
-        return font;
-    }
-    error = FT_New_Face(font.library, fontPath, 0, &font.face);
-    if (error == FT_Err_Unknown_File_Format) {
         FT_Done_FreeType(font.library);
-        return font;
-    } else if (error) {
-        FT_Done_FreeType(font.library);
-        return font;
+        return (Font){0};
     }
-    if (font.fontSize <= 1) font.fontSize = ATLAS_FONT_SIZE;
-    if (font.oversampling <= 1) font.oversampling = 1;
-    font = GenAtlas(font);
-    return font;
+    RegisterLoadedFont(font.library, font.face);
+    font.fontSize = ATLAS_FONT_SIZE;
+    font.oversampling = 1;
+    return GenAtlas(font);
 }
 
 FontCacheEntry fontCacheTable[FONT_CACHE_SIZE] = {0};
-unsigned long fontCacheAccessCounter = 0;
+unsigned long fontCacheAccessCounter = 1;
 
 Font SetFontSize(Font font, float fontSize) {
-    if (fontSize <= 1) fontSize = ATLAS_FONT_SIZE;
-    unsigned int hash = (unsigned int)(fontSize * 100) % FONT_CACHE_SIZE;
+    if (!font.face) return font;
+    if (fontSize <= 1.0f) fontSize = ATLAS_FONT_SIZE;
+    if (font.textureID && fabsf(font.fontSize - fontSize) < 0.01f) return font;
+    uintptr_t faceKey = (uintptr_t)font.face;
+    unsigned int hash = (unsigned int)(faceKey ^ (faceKey >> 16) ^ (unsigned int)(fontSize * 100.0f)) % FONT_CACHE_SIZE;
+    int empty = -1;
     for (int i = 0; i < FONT_CACHE_SIZE; i++) {
         int index = (hash + i) % FONT_CACHE_SIZE;
-        if (fontCacheTable[index].used && 
-            fabsf(fontCacheTable[index].fontSize - fontSize) < 0.01f) {
-            fontCacheTable[index].lastUsed = fontCacheAccessCounter++;
-            return fontCacheTable[index].font;
+        FontCacheEntry* entry = &fontCacheTable[index];
+        if (!entry->used) {
+            empty = index;
+            break;
         }
-        if (!fontCacheTable[index].used) {
-            font.fontSize = fontSize;
-            font = GenAtlas(font);
-            fontCacheTable[index].fontSize = fontSize;
-            fontCacheTable[index].font = font;
-            fontCacheTable[index].used = true;
-            fontCacheTable[index].lastUsed = fontCacheAccessCounter++;
-            return font;
+        if (entry->face == font.face && entry->nearest == font.nearest && entry->subpixel == font.subpixel && fabsf(entry->fontSize - fontSize) < 0.01f) {
+            entry->lastUsed = fontCacheAccessCounter++;
+            return entry->font;
         }
     }
-    int lruIndex = 0;
-    unsigned long oldestAccess = ULONG_MAX;
-    for (int i = 0; i < FONT_CACHE_SIZE; i++) {
-        if (fontCacheTable[i].lastUsed < oldestAccess) {
-            oldestAccess = fontCacheTable[i].lastUsed;
-            lruIndex = i;
+    int index = empty;
+    if (index < 0) {
+        unsigned long oldest = ULONG_MAX;
+        for (int i = 0; i < FONT_CACHE_SIZE; i++) {
+            if (fontCacheTable[i].lastUsed < oldest) {
+                oldest = fontCacheTable[i].lastUsed;
+                index = i;
+            }
         }
-    }
-    if (fontCacheTable[lruIndex].font.textureID) {
-        glDeleteTextures(1, &fontCacheTable[lruIndex].font.textureID);
+        GLuint texture = fontCacheTable[index].font.textureID;
+        if (texture) {
+            if (renderTexture == texture) UnbindTexture();
+            glDeleteTextures(1, &texture);
+            UnregisterFontTexture(texture);
+        }
     }
     font.fontSize = fontSize;
-    font = GenAtlas(font);
-    fontCacheTable[lruIndex].fontSize = fontSize;
-    fontCacheTable[lruIndex].font = font;
-    fontCacheTable[lruIndex].lastUsed = fontCacheAccessCounter++;
-    return font;
+    font.textureID = 0;
+    Font generated = GenAtlas(font);
+    if (!generated.textureID) return font;
+    fontCacheTable[index] = (FontCacheEntry){
+        .fontSize = fontSize,
+        .face = font.face,
+        .nearest = font.nearest,
+        .subpixel = font.subpixel,
+        .font = generated,
+        .used = true,
+        .lastUsed = fontCacheAccessCounter++
+    };
+    return generated;
 }
 
 void PreloadFontSizes(Font font) {
-    float commonSizes[] = {12.0f, 14.0f, 16.0f, 18.0f, 20.0f, 24.0f};
-    for (int i = 0; i < 6; i++) {
+    const float commonSizes[] = {12.0f, 14.0f, 16.0f, 18.0f, 20.0f, 24.0f};
+    for (size_t i = 0; i < sizeof(commonSizes) / sizeof(commonSizes[0]); i++) {
         SetFontSize(font, commonSizes[i]);
     }
 }
 
 CharSizeCache charSizeCache[CHAR_CACHE_SIZE] = {0};
 StringSizeCache stringSizeCache[STRING_CACHE_SIZE] = {0};
-unsigned long stringSizeAccessCounter = 0;
-static TextRenderState textRenderState = {0};
+unsigned long stringSizeAccessCounter = 1;
 
 unsigned int HashTextString(const char* str, float fontSize) {
-    unsigned int hash = 5381;
-    int c;
-    while ((c = *str++)) {
-        hash = ((hash << 5) + hash) + c;
+    unsigned int hash = 2166136261u;
+    while (*str) {
+        hash ^= (unsigned char)*str++;
+        hash *= 16777619u;
     }
-    hash = hash ^ ((unsigned int)(fontSize * 100));
+    hash ^= (unsigned int)(fontSize * 100.0f);
     return hash % STRING_CACHE_SIZE;
 }
 
 TextSize GetTextSize(Font font, float fontSize, const char* text) {
     if (!font.face) return (TextSize){0, 0};
-    if (!text || !text[0]) {
-        return (TextSize){0, (int)(fontSize * 1.2f)};
-    }
+    if (fontSize <= 1.0f) fontSize = 1.0f;
+    if (!text || !text[0]) return (TextSize){0, (int)(fontSize * 1.2f)};
     size_t textLen = strlen(text);
+    unsigned int hash = HashTextString(text, fontSize) ^ (unsigned int)(uintptr_t)font.face;
+    hash %= STRING_CACHE_SIZE;
     if (textLen < MAX_CACHED_STRING_LEN) {
-        unsigned int hash = HashTextString(text, fontSize);
         for (int i = 0; i < STRING_CACHE_SIZE; i++) {
             int index = (hash + i) % STRING_CACHE_SIZE;
-            if (stringSizeCache[index].valid && 
-                stringSizeCache[index].fontSize == fontSize &&
-                strcmp(stringSizeCache[index].text, text) == 0) {
-                stringSizeCache[index].lastUsed = stringSizeAccessCounter++;
-                return stringSizeCache[index].size;
-            }   
-            if (!stringSizeCache[index].valid) {
-                break;
+            StringSizeCache* entry = &stringSizeCache[index];
+            if (!entry->valid) break;
+            if (entry->face == font.face && fabsf(entry->fontSize - fontSize) < 0.01f && strcmp(entry->text, text) == 0) {
+                entry->lastUsed = stringSizeAccessCounter++;
+                return entry->size;
             }
         }
     }
-    TextSize size = {0, 0};
-    FT_Error error = FT_Set_Pixel_Sizes(font.face, 0, fontSize);
-    if (error) {
-        return size;
-    }
+    if (!SetFontPixelSize(font.face, fontSize)) return (TextSize){0, 0};
     FT_Face face = font.face;
-    int ascent = face->size->metrics.ascender >> 6;
-    int descent = face->size->metrics.descender >> 6;
-    int lineGap = (face->size->metrics.height - (face->size->metrics.ascender - face->size->metrics.descender)) >> 6;
-    int lineHeight = ascent - descent + lineGap;
+    int lineHeight = face->size->metrics.height >> 6;
+    if (lineHeight <= 0) lineHeight = (int)ceilf(fontSize * 1.2f);
     int currentLineWidth = 0;
     int maxLineWidth = 0;
     int lines = 1;
-    unsigned char prevC = 0;
-    for (size_t i = 0; text[i] != '\0'; ++i) {
+    FT_UInt previousGlyph = 0;
+    for (size_t i = 0; text[i] != '\0'; i++) {
         unsigned char c = (unsigned char)text[i];
         if (c == '\n') {
-            if (currentLineWidth > maxLineWidth) {
-                maxLineWidth = currentLineWidth;
-            }
+            maxLineWidth = MaxInt(maxLineWidth, currentLineWidth);
             currentLineWidth = 0;
+            previousGlyph = 0;
             lines++;
-            prevC = 0;
             continue;
         }
-        unsigned int charHash = (c << 16) | ((unsigned int)(fontSize * 100) & 0xFFFF);
-        unsigned int charIndex = charHash % CHAR_CACHE_SIZE;
-        int charWidth;
-        if (charSizeCache[charIndex].valid && 
-            charSizeCache[charIndex].c == c && 
-            charSizeCache[charIndex].fontSize == fontSize) {
-            charWidth = charSizeCache[charIndex].width;
-        } else {
-            error = FT_Load_Char(face, c, FT_LOAD_DEFAULT);
-            if (error) {
-                continue;
-            }
-            charWidth = face->glyph->advance.x >> 6;
-            charSizeCache[charIndex].c = c;
-            charSizeCache[charIndex].fontSize = fontSize;
-            charSizeCache[charIndex].width = charWidth;
-            charSizeCache[charIndex].height = lineHeight;
-            charSizeCache[charIndex].valid = true;
-        }
-        currentLineWidth += charWidth;
-        if (prevC && text[i+1]) {
+        FT_UInt glyphIndex = FT_Get_Char_Index(face, c);
+        if (previousGlyph && glyphIndex && FT_HAS_KERNING(face)) {
             FT_Vector delta;
-            FT_Get_Kerning(face, prevC, c, FT_KERNING_DEFAULT, &delta);
+            FT_Get_Kerning(face, previousGlyph, glyphIndex, FT_KERNING_DEFAULT, &delta);
             currentLineWidth += delta.x >> 6;
         }
-        prevC = c;
+        unsigned int charHash = ((unsigned int)c * 16777619u) ^ (unsigned int)(fontSize * 100.0f) ^ (unsigned int)(uintptr_t)face;
+        CharSizeCache* charEntry = &charSizeCache[charHash % CHAR_CACHE_SIZE];
+        int charWidth;
+        if (charEntry->valid && charEntry->face == face && charEntry->c == c && fabsf(charEntry->fontSize - fontSize) < 0.01f) {
+            charWidth = charEntry->width;
+        } else {
+            if (FT_Load_Glyph(face, glyphIndex, FT_LOAD_DEFAULT) != 0) continue;
+            charWidth = face->glyph->advance.x >> 6;
+            *charEntry = (CharSizeCache){c, face, fontSize, charWidth, lineHeight, true};
+        }
+        currentLineWidth += charWidth;
+        previousGlyph = glyphIndex;
     }
-    if (currentLineWidth > maxLineWidth) {
-        maxLineWidth = currentLineWidth;
-    }
-    size.width = maxLineWidth;
-    size.height = lineHeight * lines;
+    TextSize size = {MaxInt(maxLineWidth, currentLineWidth), lineHeight * lines};
     if (textLen < MAX_CACHED_STRING_LEN) {
-        unsigned int hash = HashTextString(text, fontSize);
-        int slotIndex = -1;
+        int slot = -1;
         for (int i = 0; i < STRING_CACHE_SIZE; i++) {
             int index = (hash + i) % STRING_CACHE_SIZE;
             if (!stringSizeCache[index].valid) {
-                slotIndex = index;
+                slot = index;
                 break;
             }
-            if (stringSizeCache[index].fontSize == fontSize &&
-                strcmp(stringSizeCache[index].text, text) == 0) {
-                slotIndex = index;
+            if (stringSizeCache[index].face == font.face && fabsf(stringSizeCache[index].fontSize - fontSize) < 0.01f && strcmp(stringSizeCache[index].text, text) == 0) {
+                slot = index;
                 break;
             }
         }
-        if (slotIndex == -1) {
-            unsigned long oldestAccess = ULONG_MAX;
+        if (slot < 0) {
+            unsigned long oldest = ULONG_MAX;
             for (int i = 0; i < STRING_CACHE_SIZE; i++) {
-                if (stringSizeCache[i].lastUsed < oldestAccess) {
-                    oldestAccess = stringSizeCache[i].lastUsed;
-                    slotIndex = i;
+                if (stringSizeCache[i].lastUsed < oldest) {
+                    oldest = stringSizeCache[i].lastUsed;
+                    slot = i;
                 }
             }
         }
-        if (slotIndex >= 0) {
-            strncpy(stringSizeCache[slotIndex].text, text, MAX_CACHED_STRING_LEN-1);
-            stringSizeCache[slotIndex].text[MAX_CACHED_STRING_LEN-1] = '\0';
-            stringSizeCache[slotIndex].fontSize = fontSize;
-            stringSizeCache[slotIndex].size = size;
-            stringSizeCache[slotIndex].valid = true;
-            stringSizeCache[slotIndex].lastUsed = stringSizeAccessCounter++;
-        }
+        StringSizeCache* entry = &stringSizeCache[slot];
+        strncpy(entry->text, text, MAX_CACHED_STRING_LEN - 1);
+        entry->text[MAX_CACHED_STRING_LEN - 1] = '\0';
+        entry->face = font.face;
+        entry->fontSize = fontSize;
+        entry->size = size;
+        entry->valid = true;
+        entry->lastUsed = stringSizeAccessCounter++;
     }
     return size;
 }
 
 TextSize GetTextSizeCached(Font font, float fontSize, const char* text) {
-    static TextSize cachedSize;
-    static char lastText[64] = "";
-    static float lastSize = 0;
-    if (fontSize == lastSize && strcmp(text, lastText) == 0 && strlen(text) < 63)
-        return cachedSize;
-    cachedSize = GetTextSize(font, fontSize, text);
-    lastSize = fontSize;
-    strncpy(lastText, text, 63);
-    return cachedSize;
+    return GetTextSize(font, fontSize, text);
 }
 
 void RenderShaderText(ShaderObject obj, Color color, float fontSize) {
-    if (obj.shader.hotreloading) {
-        obj.shader = ShaderHotReload(obj.shader);
+    (void)fontSize;
+    if (!obj.shader.Program || !obj.vertices || !obj.indices || !obj.size_vertices || !obj.size_indices) return;
+    obj.shader = ResolveRenderShader(obj.shader);
+    GLfloat Projection[16], Model[16], View[16];
+    CalculateProjections(obj, Model, Projection, View);
+    SetDepthMode(obj);
+    SetPolygonMode();
+    BindRenderBuffers();
+    UploadRenderBuffers(obj);
+    UseShader(obj.shader.Program);
+    GLumatrix4fv(obj.shader, "projection", Projection);
+    GLumatrix4fv(obj.shader, "model", Model);
+    GLumatrix4fv(obj.shader, "view", View);
+    GLuint4f(obj.shader, "Color", color.r / 255.0f, color.g / 255.0f, color.b / 255.0f, color.a / 255.0f);
+    glDrawElements(GL_TRIANGLES, (GLsizei)(obj.size_indices / sizeof(GLuint)), GL_UNSIGNED_INT, 0);
+}
+
+static GLfloat textVertices[MAX_BATCH_CHARS * 20];
+static GLuint textIndices[MAX_BATCH_CHARS * 6];
+static bool textIndicesInitialized = false;
+
+static void InitializeTextIndices(void) {
+    if (textIndicesInitialized) return;
+    for (int i = 0; i < MAX_BATCH_CHARS; i++) {
+        int index = i * 6;
+        int vertex = i * 4;
+        textIndices[index + 0] = vertex + 0;
+        textIndices[index + 1] = vertex + 1;
+        textIndices[index + 2] = vertex + 2;
+        textIndices[index + 3] = vertex + 2;
+        textIndices[index + 4] = vertex + 3;
+        textIndices[index + 5] = vertex + 0;
     }
-    // Projection Matrix
-        GLfloat Projection[16], Model[16], View[16];
-        CalculateProjections(obj,Model,Projection,View);
-    // Debug
-        if (window.debug.wireframe) {
-            glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
-        } else if (window.debug.point) {
-            glPolygonMode(GL_FRONT_AND_BACK, GL_POINT);
-            if(window.debug.pointsize > 0) glPointSize(window.debug.pointsize);
-        } else {
-            glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
-        }
-    // Bind VAO
-        glBindVertexArray(VAO);
-    // Bind VBO and update with new vertex data
-        glBindBuffer(GL_ARRAY_BUFFER, VBO);
-        glBufferSubData(GL_ARRAY_BUFFER, 0, obj.size_vertices, obj.vertices);
-    // Bind EBO and update with new index data
-        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, EBO);
-        glBufferSubData(GL_ELEMENT_ARRAY_BUFFER, 0, obj.size_indices, obj.indices);
-    // Use the shader program
-        glUseProgram(obj.shader.Program);
-    // Set uniforms
-        GLumatrix4fv(obj.shader, "projection", Projection);
-        GLumatrix4fv(obj.shader, "model", Model);
-        GLumatrix4fv(obj.shader, "view", View);
-        //GLuint1f(obj.shader, "Size", fontSize);
-        GLuint4f(obj.shader, "Color", color.r / 255.0f, color.g / 255.0f, color.b / 255.0f, color.a / 255.0f);
-        //GLuint1f(obj.shader, "iTime", glfwGetTime());
-        //GLuint2f(obj.shader, "iResolution", window.screen_width, window.screen_height);
-        //GLuint2f(obj.shader, "iMouse", mouse.x, mouse.y);
-    // Draw using indices
-        glDrawElements(GL_TRIANGLES, obj.size_indices / sizeof(GLuint), GL_UNSIGNED_INT, 0);
-    // Unbind shader program
-        glUseProgram(0);
-        glEnableVertexAttribArray(0);
-        glBindBuffer(GL_ARRAY_BUFFER, 0);
-        glBindVertexArray(0);
-        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
+    textIndicesInitialized = true;
+}
+
+static void SetGlyphVertices(GLfloat* vertices, Glyph* glyph, float x, float y, float scale) {
+    float width = (glyph->x1 - glyph->x0) * scale;
+    float height = (glyph->y1 - glyph->y0) * scale;
+    vertices[0] = x;
+    vertices[1] = y + height;
+    vertices[2] = 0.0f;
+    vertices[3] = glyph->u0;
+    vertices[4] = glyph->v1;
+    vertices[5] = x + width;
+    vertices[6] = y + height;
+    vertices[7] = 0.0f;
+    vertices[8] = glyph->u1;
+    vertices[9] = glyph->v1;
+    vertices[10] = x + width;
+    vertices[11] = y;
+    vertices[12] = 0.0f;
+    vertices[13] = glyph->u1;
+    vertices[14] = glyph->v0;
+    vertices[15] = x;
+    vertices[16] = y;
+    vertices[17] = 0.0f;
+    vertices[18] = glyph->u0;
+    vertices[19] = glyph->v0;
 }
 
 void DrawText(int x, int y, Font font, float fontSize, const char* text, Color color) {
+    if (!font.face || !font.textureID || !text) return;
     if (fontSize <= 1.0f) fontSize = 1.0f;
     if (color.a == 0) color.a = 255;
-    if (!font.face || !font.textureID) return;
+    InitializeTextIndices();
+    if (!SetFontPixelSize(font.face, font.fontSize)) return;
     float scale = fontSize / font.fontSize;
-    font = SetFontSize(font, font.fontSize);
-    GLfloat vertices[MAX_BATCH_CHARS * 20];
-    GLuint indices[MAX_BATCH_CHARS * 6];
-    int charCount = 0;
-    int indexCount = 0;
-    int vertexCount = 0;
-    int lineHeight = (font.face->size->metrics.height >> 6) * scale;
-    glBindTexture(GL_TEXTURE_2D, font.textureID);
-    glEnable(GL_BLEND);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    int lineHeight = (int)((font.face->size->metrics.height >> 6) * scale);
+    float ascent = (font.face->size->metrics.ascender >> 6) * scale;
     float xpos = (float)x;
-    float ypos = (float)y + (120.0f * scale);
-    for (size_t i = 0; text[i] != '\0'; ++i) {
-        if (text[i] == '\n' || charCount >= MAX_BATCH_CHARS) {
-            if (charCount > 0) {
-                RenderShaderText((ShaderObject){
-                    camera, shaderfont, vertices, indices, 
-                    vertexCount * sizeof(GLfloat), indexCount * sizeof(GLuint), 
-                    camera.transform}, color, fontSize);
-                charCount = 0;
-                vertexCount = 0;
-                indexCount = 0;
-            }
-            if (text[i] == '\n') {
-                ypos += lineHeight;
-                xpos = (float)x;
-                continue;
-            }
-        }
+    float ypos = (float)y + ascent;
+    int charCount = 0;
+    FT_UInt previousGlyph = 0;
+    BindTexture(font.textureID);
+    SetBlend(true);
+    for (size_t i = 0; text[i] != '\0'; i++) {
         unsigned char c = (unsigned char)text[i];
-        if (c < 32 || c >= 32 + MAX_GLYPHS) continue;
+        if (c == '\n') {
+            xpos = (float)x;
+            ypos += lineHeight;
+            previousGlyph = 0;
+            continue;
+        }
+        if (c < 32) continue;
+        FT_UInt glyphIndex = FT_Get_Char_Index(font.face, c);
+        if (previousGlyph && glyphIndex && FT_HAS_KERNING(font.face)) {
+            FT_Vector delta;
+            FT_Get_Kerning(font.face, previousGlyph, glyphIndex, FT_KERNING_DEFAULT, &delta);
+            xpos += (delta.x >> 6) * scale;
+        }
         Glyph* glyph = &font.glyphs[c - 32];
-        float x_start = xpos + glyph->xoff * scale;
-        float y_start = ypos - glyph->yoff * scale;
-        float w = (glyph->x1 - glyph->x0) * scale;
-        float h = (glyph->y1 - glyph->y0) * scale;
-        int vbase = vertexCount;
-        vertices[vbase + 0] = x_start;     
-        vertices[vbase + 1] = y_start + h; 
-        vertices[vbase + 2] = 0.0f;        
-        vertices[vbase + 3] = glyph->u0;   
-        vertices[vbase + 4] = glyph->v1;
-        vertices[vbase + 5] = x_start + w; 
-        vertices[vbase + 6] = y_start + h; 
-        vertices[vbase + 7] = 0.0f;        
-        vertices[vbase + 8] = glyph->u1;   
-        vertices[vbase + 9] = glyph->v1;
-        vertices[vbase + 10] = x_start + w;
-        vertices[vbase + 11] = y_start;    
-        vertices[vbase + 12] = 0.0f;       
-        vertices[vbase + 13] = glyph->u1;  
-        vertices[vbase + 14] = glyph->v0;
-        vertices[vbase + 15] = x_start;    
-        vertices[vbase + 16] = y_start;    
-        vertices[vbase + 17] = 0.0f;       
-        vertices[vbase + 18] = glyph->u0;  
-        vertices[vbase + 19] = glyph->v0;
-        int ibase = indexCount;
-        int vstart = charCount * 4;
-        indices[ibase + 0] = vstart + 0;
-        indices[ibase + 1] = vstart + 1;
-        indices[ibase + 2] = vstart + 2;
-        indices[ibase + 3] = vstart + 2;
-        indices[ibase + 4] = vstart + 3;
-        indices[ibase + 5] = vstart + 0;
-        vertexCount += 20;
-        indexCount += 6;
+        float glyphX = xpos + glyph->xoff * scale;
+        float glyphY = ypos - glyph->yoff * scale;
+        SetGlyphVertices(textVertices + charCount * 20, glyph, glyphX, glyphY, scale);
         charCount++;
         xpos += glyph->xadvance * scale;
+        previousGlyph = glyphIndex;
+        if (charCount == MAX_BATCH_CHARS) {
+            RenderShaderText((ShaderObject){camera, shaderfont, textVertices, textIndices,
+                (size_t)charCount * 20 * sizeof(GLfloat), (size_t)charCount * 6 * sizeof(GLuint), camera.transform, false}, color, fontSize);
+            charCount = 0;
+        }
     }
     if (charCount > 0) {
-        RenderShaderText((ShaderObject){
-            camera, shaderfont, vertices, indices, 
-            vertexCount * sizeof(GLfloat), indexCount * sizeof(GLuint), 
-            camera.transform}, color, fontSize);
+        RenderShaderText((ShaderObject){camera, shaderfont, textVertices, textIndices,
+            (size_t)charCount * 20 * sizeof(GLfloat), (size_t)charCount * 6 * sizeof(GLuint), camera.transform, false}, color, fontSize);
     }
-    glBindTexture(GL_TEXTURE_2D, 0);
-    //glDisable(GL_BLEND);
 }
 
-static BatchChar charBatch[MAX_BATCH_CHARS];
-static GLuint batchIndices[MAX_BATCH_CHARS * 6];
+static GLfloat textBatchVertices[MAX_BATCH_CHARS * 20];
+static Color textBatchColors[MAX_BATCH_CHARS];
 static int textBatchCount = 0;
 static GLuint currentTextureID = 0;
-static float currentFontSize = 0;
+static float currentFontSize = 0.0f;
 
 void FlushTextBatch() {
     if (textBatchCount == 0) return;
-    glBindTexture(GL_TEXTURE_2D, currentTextureID);
-    glEnable(GL_BLEND);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    BindTexture(currentTextureID);
+    SetBlend(true);
     int startChar = 0;
-    Color currentColor = charBatch[0].color;
+    Color currentColor = textBatchColors[0];
     for (int i = 1; i <= textBatchCount; i++) {
-        bool colorChanged = i == textBatchCount || 
-            memcmp(&charBatch[i].color, &currentColor, sizeof(Color)) != 0;
-        if (colorChanged) {
-            int charCount = i - startChar;
-            GLfloat tempVertices[MAX_BATCH_CHARS * 20];
-            for (int j = 0; j < charCount; j++) {
-                memcpy(&tempVertices[j * 20], charBatch[startChar + j].vertices, 20 * sizeof(GLfloat));
-            }
-            RenderShaderText((ShaderObject){
-                camera, shaderfont, tempVertices, batchIndices, 
-                charCount * 20 * sizeof(GLfloat), 
-                charCount * 6 * sizeof(GLuint),
-                camera.transform}, currentColor, currentFontSize);
-            if (i < textBatchCount) {
-                startChar = i;
-                currentColor = charBatch[i].color;
-            }
+        if (i < textBatchCount && SameColor(textBatchColors[i], currentColor)) continue;
+        int count = i - startChar;
+        RenderShaderText((ShaderObject){
+            camera,
+            shaderfont,
+            textBatchVertices + startChar * 20,
+            textIndices,
+            (size_t)count * 20 * sizeof(GLfloat),
+            (size_t)count * 6 * sizeof(GLuint),
+            camera.transform,
+            false
+        }, currentColor, currentFontSize);
+        if (i < textBatchCount) {
+            startChar = i;
+            currentColor = textBatchColors[i];
         }
     }
     textBatchCount = 0;
-    glBindTexture(GL_TEXTURE_2D, 0);
-    glDisable(GL_BLEND);
 }
 
 void DrawTextBatch(int x, int y, Font font, float fontSize, const char* text, Color color) {
-    if (!font.face || !font.textureID) return;
+    if (!font.face || !font.textureID || !text) return;
     if (fontSize <= 1.0f) fontSize = 1.0f;
     if (color.a == 0) color.a = 255;
-    if (textBatchCount >= MAX_BATCH_CHARS - 1 || 
-        currentTextureID != font.textureID || 
-        currentFontSize != fontSize) {
-        FlushTextBatch();
-    }
+    InitializeTextIndices();
+    if (textBatchCount > 0 && (currentTextureID != font.textureID || currentFontSize != fontSize)) FlushTextBatch();
     currentTextureID = font.textureID;
     currentFontSize = fontSize;
+    if (!SetFontPixelSize(font.face, font.fontSize)) return;
     float scale = fontSize / font.fontSize;
-    font = SetFontSize(font, font.fontSize);
-    int lineHeight = (font.face->size->metrics.height >> 6) * scale;
+    int lineHeight = (int)((font.face->size->metrics.height >> 6) * scale);
+    float ascent = (font.face->size->metrics.ascender >> 6) * scale;
     float xpos = (float)x;
-    float ypos = (float)y + (120.0f * scale);
-    static bool indicesInitialized = false;
-    if (!indicesInitialized) {
-        for (int i = 0; i < MAX_BATCH_CHARS; i++) {
-            int idx = i * 6;
-            int vstart = i * 4;
-            batchIndices[idx + 0] = vstart + 0;
-            batchIndices[idx + 1] = vstart + 1;
-            batchIndices[idx + 2] = vstart + 2;
-            batchIndices[idx + 3] = vstart + 2;
-            batchIndices[idx + 4] = vstart + 3;
-            batchIndices[idx + 5] = vstart + 0;
-        }
-        indicesInitialized = true;
-    }
-    for (size_t i = 0; text[i] != '\0'; ++i) {
-        if (text[i] == '\n' || textBatchCount >= MAX_BATCH_CHARS) {
-            if (textBatchCount > 0) {
-                FlushTextBatch();
-            }
-            if (text[i] == '\n') {
-                ypos += lineHeight;
-                xpos = (float)x;
-                continue;
-            }
-        }
+    float ypos = (float)y + ascent;
+    FT_UInt previousGlyph = 0;
+    for (size_t i = 0; text[i] != '\0'; i++) {
         unsigned char c = (unsigned char)text[i];
-        if (c < 32 || c >= 32 + MAX_GLYPHS) continue;
+        if (c == '\n') {
+            xpos = (float)x;
+            ypos += lineHeight;
+            previousGlyph = 0;
+            continue;
+        }
+        if (c < 32) continue;
+        if (textBatchCount == MAX_BATCH_CHARS) FlushTextBatch();
+        FT_UInt glyphIndex = FT_Get_Char_Index(font.face, c);
+        if (previousGlyph && glyphIndex && FT_HAS_KERNING(font.face)) {
+            FT_Vector delta;
+            FT_Get_Kerning(font.face, previousGlyph, glyphIndex, FT_KERNING_DEFAULT, &delta);
+            xpos += (delta.x >> 6) * scale;
+        }
         Glyph* glyph = &font.glyphs[c - 32];
-        float x_start = xpos + glyph->xoff * scale;
-        float y_start = ypos - glyph->yoff * scale;
-        float w = (glyph->x1 - glyph->x0) * scale;
-        float h = (glyph->y1 - glyph->y0) * scale;
-        BatchChar* ch = &charBatch[textBatchCount];
-        ch->color = color;
-        ch->vertices[0] = x_start;
-        ch->vertices[1] = y_start + h;
-        ch->vertices[2] = 0.0f;
-        ch->vertices[3] = glyph->u0;
-        ch->vertices[4] = glyph->v1;
-        ch->vertices[5] = x_start + w;
-        ch->vertices[6] = y_start + h;
-        ch->vertices[7] = 0.0f;
-        ch->vertices[8] = glyph->u1;
-        ch->vertices[9] = glyph->v1;
-        ch->vertices[10] = x_start + w;
-        ch->vertices[11] = y_start;
-        ch->vertices[12] = 0.0f;
-        ch->vertices[13] = glyph->u1;
-        ch->vertices[14] = glyph->v0;
-        ch->vertices[15] = x_start;
-        ch->vertices[16] = y_start;
-        ch->vertices[17] = 0.0f;
-        ch->vertices[18] = glyph->u0;
-        ch->vertices[19] = glyph->v0;
-        textBatchCount++;
+        float glyphX = xpos + glyph->xoff * scale;
+        float glyphY = ypos - glyph->yoff * scale;
+        SetGlyphVertices(textBatchVertices + textBatchCount * 20, glyph, glyphX, glyphY, scale);
+        textBatchColors[textBatchCount++] = color;
         xpos += glyph->xadvance * scale;
+        previousGlyph = glyphIndex;
     }
+}
+
+void CleanUpFontCache(void) {
+    FlushTextBatch();
+    for (int i = 0; i < fontTextureCount; i++) {
+        if (!fontTextures[i]) continue;
+        if (renderTexture == fontTextures[i]) UnbindTexture();
+        glDeleteTextures(1, &fontTextures[i]);
+    }
+    fontTextureCount = 0;
+    for (int i = 0; i < loadedFontCount; i++) {
+        if (loadedFaces[i]) FT_Done_Face(loadedFaces[i]);
+        if (loadedLibraries[i]) FT_Done_FreeType(loadedLibraries[i]);
+    }
+    loadedFontCount = 0;
+    currentPixelFace = NULL;
+    currentPixelSize = 0.0f;
+    memset(fontCacheTable, 0, sizeof(fontCacheTable));
+    memset(charSizeCache, 0, sizeof(charSizeCache));
+    memset(stringSizeCache, 0, sizeof(stringSizeCache));
+    memset(codepointMap, 0, sizeof(codepointMap));
+    fontCacheAccessCounter = 1;
+    stringSizeAccessCounter = 1;
 }
